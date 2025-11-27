@@ -7,23 +7,25 @@ const Login = () => {
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   useEffect(() => {
-    // Check if user is already logged in
     const checkSession = async () => {
       try {
         const response = await fetch('http://localhost:3000/api/current_user', {
           method: 'GET',
-          credentials: 'include', // CRITICAL: Sends the session cookie to backend
+          credentials: 'include',
         });
 
         if (response.ok) {
-          // If 200 OK, we are logged in -> Go to Dashboard
-          navigate('/dashboard');
+          const user = await response.json();
+          // ROLE BASED REDIRECT
+          if (user.role === 'admin') {
+            navigate('/admin');
+          } else {
+            navigate('/dashboard');
+          }
         } else {
-          // If 401 or error, stay on Login page
           setCheckingAuth(false);
         }
       } catch (error) {
-        console.error("Auth check failed", error);
         setCheckingAuth(false);
       }
     };
