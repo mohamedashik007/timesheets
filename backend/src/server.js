@@ -25,15 +25,10 @@ app.use(express.urlencoded({ extended: true }));
 mongoose.connect(process.env.MONGO_URI)
   .then(async () => {
     console.log('MongoDB Atlas Connected');
-    // FIX FOR ISSUE #1: Ensure googleId index is sparse to allow multiple users without googleId
     try {
       const collection = mongoose.connection.collection('users');
-      // Attempt to drop the old index if it exists and creates conflicts
-      // Note: If this fails it might be because the index doesn't exist, which is fine.
       await collection.dropIndex('googleId_1').catch(() => {}); 
-    } catch (e) {
-      // Ignore errors here, just a safety cleanup
-    }
+    } catch (e) {}
   })
   .catch(err => console.log(err));
 
@@ -90,58 +85,49 @@ app.get('/api/users', ensureAdmin, async (req, res) => {
   }
 });
 
-// 2. ADD NEW USER (WITH ROLLBACK)
+// 2. ADD NEW USER
 app.post('/api/users', ensureAdmin, async (req, res) => {
   const { email, name, role, company } = req.body;
   const lowerEmail = email.toLowerCase();
   let allowedEmailCreated = false;
 
   try {
-    // A. Check for existing User first (Fail fast)
     let user = await User.findOne({ email: lowerEmail });
-    if (user) {
-      return res.status(400).json({ message: 'User already exists' });
-    }
+    if (user) return res.status(400).json({ message: 'User already exists' });
 
-    // B. Add to Whitelist
-    // We check existence first to avoid duplicate key errors on AllowedEmail
     const existingAllow = await AllowedEmail.findOne({ email: lowerEmail });
     if (!existingAllow) {
       await AllowedEmail.create({ email: lowerEmail, addedBy: req.user.email });
-      allowedEmailCreated = true; // Mark that we created it
+      allowedEmailCreated = true;
     }
 
-    // C. Create User
     const newUser = await User.create({
       email: lowerEmail,
       displayName: name,
       role: role || 'user',
       company: company || ''
-      // googleId is undefined, which works with sparse: true
     });
 
     res.status(201).json(newUser);
 
   } catch (err) {
     console.error("Error creating user:", err);
-
-    // ROLLBACK: If we created the AllowedEmail but failed to create the User,
-    // delete the AllowedEmail so the state stays clean.
     if (allowedEmailCreated) {
         await AllowedEmail.findOneAndDelete({ email: lowerEmail });
     }
-
-    res.status(500).json({ message: 'Failed to create user. Changes rolled back.', error: err.message });
+    res.status(500).json({ message: 'Failed to create user.', error: err.message });
   }
 });
 
 // 3. EDIT USER
 app.put('/api/users/:id', ensureAdmin, async (req, res) => {
   try {
-    const { displayName, role, company } = req.body;
+    // Only allow editing basic fields, NOT Role via this endpoint if desired,
+    // but the frontend request specifically asked to remove the option from UI.
+    const { displayName, company } = req.body;
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id, 
-      { displayName, role, company }, 
+      { displayName, company }, 
       { new: true }
     );
     res.json(updatedUser);
@@ -155,21 +141,14 @@ app.delete('/api/users/:id', ensureAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
     const user = await User.findById(userId);
-    
-    // If user doesn't exist, just return success (idempotent)
     if (!user) return res.json({ message: 'User already deleted' });
 
-    // 1. Remove from Whitelist
     await AllowedEmail.findOneAndDelete({ email: user.email });
-
-    // 2. Remove from Teams
     await Team.updateMany({ lead: userId }, { lead: null });
     await Team.updateMany({ members: userId }, { $pull: { members: userId } });
-    
-    // 3. Delete User
     await User.findByIdAndDelete(userId);
     
-    res.json({ message: 'User and permissions deleted' });
+    res.json({ message: 'User deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -213,7 +192,7 @@ app.post('/api/teams', ensureAdmin, async (req, res) => {
   }
 });
 
-// 7. EDIT TEAM
+// 7. EDIT TEAM (FIXED: Protects Lead)
 app.put('/api/teams/:id', ensureAdmin, async (req, res) => {
   try {
     const { name, leadId, memberIds } = req.body;
@@ -222,17 +201,22 @@ app.put('/api/teams/:id', ensureAdmin, async (req, res) => {
     const oldTeam = await Team.findById(teamId);
     if (!oldTeam) return res.status(404).json({ message: 'Team not found' });
 
+    // 1. Handle Lead Change (Promote new, Demote old handled indirectly or manual)
     if (leadId && oldTeam.lead?.toString() !== leadId) {
        await User.findByIdAndUpdate(leadId, { team: teamId, role: 'team_lead' });
     }
 
-    // Reset old members
+    // 2. Handle Removed Members
+    // CRITICAL FIX: Ensure we do NOT set team=null for the Lead, even if they aren't in memberIds
+    const idsToKeepInTeam = [...(memberIds || [])];
+    if (leadId) idsToKeepInTeam.push(leadId);
+
     await User.updateMany(
-      { team: teamId, _id: { $nin: memberIds } }, 
+      { team: teamId, _id: { $nin: idsToKeepInTeam } }, 
       { team: null }
     );
 
-    // Set new members
+    // 3. Handle Added Members
     if (memberIds && memberIds.length > 0) {
       await User.updateMany(
         { _id: { $in: memberIds } },

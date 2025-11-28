@@ -15,7 +15,7 @@ const AdminDashboard = () => {
   const [newUser, setNewUser] = useState({ email: '', name: '', role: 'user', company: '' });
   const [newTeam, setNewTeam] = useState({ name: '', leadId: '', memberIds: [] });
   
-  // UI States (Modals)
+  // UI States
   const [activeTab, setActiveTab] = useState('users');
   const [editUser, setEditUser] = useState(null);
   const [editTeam, setEditTeam] = useState(null);
@@ -63,8 +63,7 @@ const AdminDashboard = () => {
 
   const handleAddUser = async (e) => {
     e.preventDefault();
-    // Default role is 'user', ensuring type is consistent
-    const payload = { ...newUser, role: 'user' };
+    const payload = { ...newUser, role: 'user' }; // Force role 'user'
     
     const res = await fetch('http://localhost:3000/api/users', {
       method: 'POST',
@@ -134,16 +133,13 @@ const AdminDashboard = () => {
     setDeleteConfirm(null);
   };
 
-  // --- HANDLERS: REMOVE MEMBER DIRECTLY ---
   const handleRemoveMemberFromTeam = async (team, memberId) => {
     if (!window.confirm(`Remove this user from ${team.name}?`)) return;
 
-    // Filter out the member we want to remove
     const newMemberIds = team.members
       .filter(m => (m._id || m) !== memberId)
       .map(m => m._id || m);
 
-    // Reuse the Edit Team API logic
     const res = await fetch(`http://localhost:3000/api/teams/${team._id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -173,7 +169,7 @@ const AdminDashboard = () => {
       credentials: 'include',
       body: JSON.stringify({
         displayName: editUser.displayName,
-        role: editUser.role,
+        // Role is deliberately excluded here
         company: editUser.company
       })
     });
@@ -223,30 +219,24 @@ const AdminDashboard = () => {
   };
 
   // --- FILTER HELPERS ---
-  
-  // 1. Unassigned Users (For Lead Dropdown & New Team Members)
   const unassignedUsers = users.filter(u => 
     (u.role === 'user' || u.role === 'team_lead') && !u.team
   );
 
-  // 2. Filter for Edit Team (Show unassigned OR currently in this team)
   const availableUsersForEditTeam = (teamId) => users.filter(u => 
     (u.role === 'user' || u.role === 'team_lead') && 
     (!u.team || u.team._id === teamId)
   );
 
-  // 3. Filter for Edit Lead (Show unassigned OR current lead)
   const availableLeadsForEdit = (currentLeadId) => users.filter(u => 
     u.role !== 'admin' && (!u.team || u._id === currentLeadId)
   );
-
 
   if (loading) return <div className="p-10 text-center">Loading...</div>;
 
   return (
     <div className="min-h-screen bg-gray-50 relative">
       
-      {/* Notification Banner */}
       {notification && (
         <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded shadow-lg text-white ${
           notification.type === 'error' ? 'bg-red-500' : 'bg-green-500'
@@ -316,7 +306,6 @@ const AdminDashboard = () => {
                   <label className="block text-sm font-medium text-gray-700">Company</label>
                   <input type="text" className="mt-1 w-full border border-gray-300 rounded p-2" value={newUser.company} onChange={e => setNewUser({...newUser, company: e.target.value})} />
                 </div>
-                {/* ROLE SELECTION REMOVED - DEFAULTS TO USER */}
                 <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">Add User</button>
               </form>
             </div>
@@ -377,7 +366,6 @@ const AdminDashboard = () => {
                     onChange={e => setNewTeam({...newTeam, leadId: e.target.value})}
                   >
                     <option value="">Select a User</option>
-                    {/* Only show unassigned users */}
                     {unassignedUsers.map(u => (
                       <option key={u._id} value={u._id}>{u.displayName}</option>
                     ))}
@@ -388,7 +376,6 @@ const AdminDashboard = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Assign Members</label>
                   <p className="text-xs text-gray-500 mb-2">Only unassigned users shown.</p>
                   <div className="h-40 overflow-y-auto border border-gray-300 rounded p-2 space-y-2">
-                    {/* Exclude the selected lead from members list */}
                     {unassignedUsers.filter(u => u._id !== newTeam.leadId).length > 0 ? (
                       unassignedUsers
                         .filter(u => u._id !== newTeam.leadId)
@@ -477,14 +464,9 @@ const AdminDashboard = () => {
                   <label className="block text-sm text-gray-700">Company</label>
                   <input type="text" className="w-full border p-2 rounded" value={editUser.company || ''} onChange={e => setEditUser({...editUser, company: e.target.value})} />
                 </div>
-                <div>
-                  <label className="block text-sm text-gray-700">Role</label>
-                  <select className="w-full border p-2 rounded" value={editUser.role} onChange={e => setEditUser({...editUser, role: e.target.value})}>
-                    <option value="user">User</option>
-                    <option value="team_lead">Team Lead</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
+                
+                {/* ROLE SELECTION REMOVED as per request */}
+                
                 <div className="flex justify-end gap-2 mt-4">
                   <button type="button" onClick={() => setEditUser(null)} className="px-4 py-2 text-gray-600">Cancel</button>
                   <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Save Changes</button>
@@ -512,7 +494,6 @@ const AdminDashboard = () => {
                     onChange={e => setEditTeam({...editTeam, lead: e.target.value})}
                   >
                     <option value="">No Lead</option>
-                    {/* Show current lead + any unassigned users */}
                     {availableLeadsForEdit(editTeam.lead?._id || editTeam.lead).map(u => (
                       <option key={u._id} value={u._id}>{u.displayName}</option>
                     ))}
