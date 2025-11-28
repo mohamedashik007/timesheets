@@ -3,8 +3,7 @@ const mongoose = require('mongoose');
 const UserSchema = new mongoose.Schema({
   googleId: {
     type: String,
-    // unique: true, // REMOVED: Pre-created users won't have this yet
-    sparse: true     // ADDED: Allows multiple docs to have null/undefined googleId
+    sparse: true
   },
   email: {
     type: String,
@@ -17,9 +16,10 @@ const UserSchema = new mongoose.Schema({
   firstName: String,
   lastName: String,
   image: String,
+  company: { type: String, trim: true }, // Added Company Field
   role: {
     type: String,
-    enum: ['user', 'admin', 'team_lead'], // Added team_lead
+    enum: ['user', 'admin', 'team_lead'],
     default: 'user'
   },
   team: {

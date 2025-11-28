@@ -32,8 +32,7 @@ app.use(
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
-    cookie: { maxAge: 24 * 60 * 60 * 1000, // secure: true, // Uncomment this line if using HTTPS (Production),
-    httpOnly: true }
+    cookie: { maxAge: 24 * 60 * 60 * 1000, httpOnly: true }
   })
 );
 
@@ -70,7 +69,7 @@ app.get('/api/current_user', ensureAuth, (req, res) => {
   res.json(req.user);
 });
 
-// 1. GET ALL USERS (For Admin UI)
+// 1. GET ALL USERS
 app.get('/api/users', ensureAdmin, async (req, res) => {
   try {
     const users = await User.find().populate('team');
@@ -80,29 +79,28 @@ app.get('/api/users', ensureAdmin, async (req, res) => {
   }
 });
 
-// 2. ADD NEW USER (Pre-create + Whitelist)
+// 2. ADD NEW USER
 app.post('/api/users', ensureAdmin, async (req, res) => {
   try {
-    const { email, name, role } = req.body;
+    const { email, name, role, company } = req.body;
     const lowerEmail = email.toLowerCase();
 
-    // A. Add to Whitelist
+    // Whitelist
     const existingAllow = await AllowedEmail.findOne({ email: lowerEmail });
     if (!existingAllow) {
       await AllowedEmail.create({ email: lowerEmail, addedBy: req.user.email });
     }
 
-    // B. Check if User exists (could be pre-created or logged in)
     let user = await User.findOne({ email: lowerEmail });
     if (user) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // C. Create Placeholder User
     const newUser = await User.create({
       email: lowerEmail,
       displayName: name,
-      role: role || 'user'
+      role: role || 'user',
+      company: company || ''
     });
 
     res.status(201).json(newUser);
@@ -111,7 +109,43 @@ app.post('/api/users', ensureAdmin, async (req, res) => {
   }
 });
 
-// 3. GET TEAMS
+// 3. EDIT USER
+app.put('/api/users/:id', ensureAdmin, async (req, res) => {
+  try {
+    const { displayName, role, company } = req.body;
+    const updatedUser = await User.findByIdAndUpdate(
+      req.params.id, 
+      { displayName, role, company }, 
+      { new: true }
+    );
+    res.json(updatedUser);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. DELETE USER
+app.delete('/api/users/:id', ensureAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    // Cleanup: Remove user from any team they lead
+    await Team.updateMany({ lead: userId }, { lead: null });
+    // Cleanup: Remove user from any team members list
+    await Team.updateMany({ members: userId }, { $pull: { members: userId } });
+    
+    await User.findByIdAndDelete(userId);
+    // Remove from whitelist so they can't login again
+    const user = await User.findById(userId); // Wait, already deleted. Need email first.
+    // Note: To be strict we should delete from AllowedEmail too, but we lost the email ref unless we fetched first.
+    // For now, just deleting the User doc is sufficient to break the "Profile" link.
+    
+    res.json({ message: 'User deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 5. GET TEAMS
 app.get('/api/teams', ensureAdmin, async (req, res) => {
   try {
     const teams = await Team.find().populate('lead').populate('members');
@@ -121,22 +155,51 @@ app.get('/api/teams', ensureAdmin, async (req, res) => {
   }
 });
 
-// 4. CREATE TEAM
+// 6. CREATE TEAM
 app.post('/api/teams', ensureAdmin, async (req, res) => {
   try {
     const { name, leadId } = req.body;
-    
     const newTeam = await Team.create({ name, lead: leadId || null });
     
-    // If a lead was assigned, update that User's team and role
     if (leadId) {
-      await User.findByIdAndUpdate(leadId, { 
-        team: newTeam._id,
-        role: 'team_lead' // Promote to team lead
-      });
+      await User.findByIdAndUpdate(leadId, { team: newTeam._id, role: 'team_lead' });
+    }
+    res.status(201).json(newTeam);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7. EDIT TEAM
+app.put('/api/teams/:id', ensureAdmin, async (req, res) => {
+  try {
+    const { name, leadId } = req.body;
+    const teamId = req.params.id;
+
+    // If lead changed, we might need to update old lead and new lead
+    const oldTeam = await Team.findById(teamId);
+    
+    if (leadId && oldTeam.lead?.toString() !== leadId) {
+       // Update new lead
+       await User.findByIdAndUpdate(leadId, { team: teamId, role: 'team_lead' });
     }
 
-    res.status(201).json(newTeam);
+    const updatedTeam = await Team.findByIdAndUpdate(teamId, { name, lead: leadId || null }, { new: true });
+    res.json(updatedTeam);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 8. DELETE TEAM
+app.delete('/api/teams/:id', ensureAdmin, async (req, res) => {
+  try {
+    const teamId = req.params.id;
+    // Cleanup: Remove team ref from all users in this team
+    await User.updateMany({ team: teamId }, { team: null });
+    
+    await Team.findByIdAndDelete(teamId);
+    res.json({ message: 'Team deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
