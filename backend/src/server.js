@@ -124,22 +124,31 @@ app.put('/api/users/:id', ensureAdmin, async (req, res) => {
   }
 });
 
-// 4. DELETE USER
+// 4. DELETE USER (FIXED LOGIC)
 app.delete('/api/users/:id', ensureAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
-    // Cleanup: Remove user from any team they lead
+
+    // STEP 1: Fetch the user FIRST so we have their email
+    const user = await User.findById(userId);
+    if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+    }
+
+    // STEP 2: Delete from AllowedEmail whitelist
+    // This prevents them from logging in again via Google
+    await AllowedEmail.findOneAndDelete({ email: user.email });
+
+    // STEP 3: Cleanup Teams (Remove as lead or member)
     await Team.updateMany({ lead: userId }, { lead: null });
-    // Cleanup: Remove user from any team members list
     await Team.updateMany({ members: userId }, { $pull: { members: userId } });
     
+    // STEP 4: Delete the User Document
+    // This effectively invalidates their session because passport.deserializeUser 
+    // will return null on their next request.
     await User.findByIdAndDelete(userId);
-    // Remove from whitelist so they can't login again
-    const user = await User.findById(userId); // Wait, already deleted. Need email first.
-    // Note: To be strict we should delete from AllowedEmail too, but we lost the email ref unless we fetched first.
-    // For now, just deleting the User doc is sufficient to break the "Profile" link.
     
-    res.json({ message: 'User deleted' });
+    res.json({ message: 'User and permissions deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
