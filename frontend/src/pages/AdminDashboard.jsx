@@ -63,11 +63,14 @@ const AdminDashboard = () => {
 
   const handleAddUser = async (e) => {
     e.preventDefault();
+    // Default role is 'user', ensuring type is consistent
+    const payload = { ...newUser, role: 'user' };
+    
     const res = await fetch('http://localhost:3000/api/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify(newUser)
+      body: JSON.stringify(payload)
     });
     if (res.ok) {
       showNotify('User added successfully');
@@ -131,6 +134,35 @@ const AdminDashboard = () => {
     setDeleteConfirm(null);
   };
 
+  // --- HANDLERS: REMOVE MEMBER DIRECTLY ---
+  const handleRemoveMemberFromTeam = async (team, memberId) => {
+    if (!window.confirm(`Remove this user from ${team.name}?`)) return;
+
+    // Filter out the member we want to remove
+    const newMemberIds = team.members
+      .filter(m => (m._id || m) !== memberId)
+      .map(m => m._id || m);
+
+    // Reuse the Edit Team API logic
+    const res = await fetch(`http://localhost:3000/api/teams/${team._id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        name: team.name,
+        leadId: team.lead?._id || team.lead,
+        memberIds: newMemberIds
+      })
+    });
+
+    if (res.ok) {
+      showNotify('Member removed from team');
+      refreshData();
+    } else {
+      showNotify('Failed to remove member', 'error');
+    }
+  };
+
   // --- HANDLERS: EDIT ---
 
   const handleUpdateUser = async (e) => {
@@ -192,15 +224,20 @@ const AdminDashboard = () => {
 
   // --- FILTER HELPERS ---
   
-  // Filter for Create Team: Only show users NOT in a team
-  const availableUsersForNewTeam = users.filter(u => 
+  // 1. Unassigned Users (For Lead Dropdown & New Team Members)
+  const unassignedUsers = users.filter(u => 
     (u.role === 'user' || u.role === 'team_lead') && !u.team
   );
 
-  // Filter for Edit Team: Show users NOT in a team OR users currently IN this team
+  // 2. Filter for Edit Team (Show unassigned OR currently in this team)
   const availableUsersForEditTeam = (teamId) => users.filter(u => 
     (u.role === 'user' || u.role === 'team_lead') && 
     (!u.team || u.team._id === teamId)
+  );
+
+  // 3. Filter for Edit Lead (Show unassigned OR current lead)
+  const availableLeadsForEdit = (currentLeadId) => users.filter(u => 
+    u.role !== 'admin' && (!u.team || u._id === currentLeadId)
   );
 
 
@@ -279,14 +316,7 @@ const AdminDashboard = () => {
                   <label className="block text-sm font-medium text-gray-700">Company</label>
                   <input type="text" className="mt-1 w-full border border-gray-300 rounded p-2" value={newUser.company} onChange={e => setNewUser({...newUser, company: e.target.value})} />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Role</label>
-                  <select className="mt-1 w-full border border-gray-300 rounded p-2" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
-                    <option value="user">User</option>
-                    <option value="team_lead">Team Lead</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
+                {/* ROLE SELECTION REMOVED - DEFAULTS TO USER */}
                 <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">Add User</button>
               </form>
             </div>
@@ -300,7 +330,7 @@ const AdminDashboard = () => {
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Team</th> {/* ADDED TEAM COLUMN */}
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Team</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
                   </thead>
@@ -313,7 +343,7 @@ const AdminDashboard = () => {
                         </td>
                         <td className="px-3 py-2 text-sm text-gray-600">{u.role}</td>
                         <td className="px-3 py-2 text-sm text-gray-600">{u.company || '-'}</td>
-                        <td className="px-3 py-2 text-sm text-gray-600">{u.team?.name || '-'}</td> {/* ADDED TEAM DATA */}
+                        <td className="px-3 py-2 text-sm text-gray-600">{u.team?.name || '-'}</td>
                         <td className="px-3 py-2 text-right space-x-2">
                           <button onClick={() => setEditUser(u)} className="text-blue-600 hover:text-blue-900 text-sm">Edit</button>
                           {u.role !== 'admin' && (
@@ -341,9 +371,14 @@ const AdminDashboard = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Assign Lead</label>
-                  <select className="mt-1 w-full border border-gray-300 rounded p-2" value={newTeam.leadId} onChange={e => setNewTeam({...newTeam, leadId: e.target.value})}>
+                  <select 
+                    className="mt-1 w-full border border-gray-300 rounded p-2" 
+                    value={newTeam.leadId} 
+                    onChange={e => setNewTeam({...newTeam, leadId: e.target.value})}
+                  >
                     <option value="">Select a User</option>
-                    {users.filter(u => u.role !== 'admin').map(u => (
+                    {/* Only show unassigned users */}
+                    {unassignedUsers.map(u => (
                       <option key={u._id} value={u._id}>{u.displayName}</option>
                     ))}
                   </select>
@@ -351,22 +386,25 @@ const AdminDashboard = () => {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Assign Members</label>
-                  <p className="text-xs text-gray-500 mb-2">Only unassigned users are shown.</p>
+                  <p className="text-xs text-gray-500 mb-2">Only unassigned users shown.</p>
                   <div className="h-40 overflow-y-auto border border-gray-300 rounded p-2 space-y-2">
-                    {availableUsersForNewTeam.length > 0 ? (
-                      availableUsersForNewTeam.map(u => (
-                        <div key={u._id} className="flex items-center">
-                          <input 
-                            type="checkbox" 
-                            id={`new-${u._id}`}
-                            checked={newTeam.memberIds.includes(u._id)}
-                            onChange={() => toggleNewTeamMember(u._id)}
-                            className="mr-2"
-                          />
-                          <label htmlFor={`new-${u._id}`} className="text-sm cursor-pointer">
-                            {u.displayName} <span className='text-xs text-gray-400'>({u.email})</span>
-                          </label>
-                        </div>
+                    {/* Exclude the selected lead from members list */}
+                    {unassignedUsers.filter(u => u._id !== newTeam.leadId).length > 0 ? (
+                      unassignedUsers
+                        .filter(u => u._id !== newTeam.leadId)
+                        .map(u => (
+                          <div key={u._id} className="flex items-center">
+                            <input 
+                              type="checkbox" 
+                              id={`new-${u._id}`}
+                              checked={newTeam.memberIds.includes(u._id)}
+                              onChange={() => toggleNewTeamMember(u._id)}
+                              className="mr-2"
+                            />
+                            <label htmlFor={`new-${u._id}`} className="text-sm cursor-pointer">
+                              {u.displayName}
+                            </label>
+                          </div>
                       ))
                     ) : (
                       <p className="text-xs text-gray-400 italic">No available users found.</p>
@@ -382,26 +420,41 @@ const AdminDashboard = () => {
               <h3 className="text-lg font-bold mb-4">All Teams</h3>
               <div className="grid gap-4">
                 {teams.map(team => (
-                  <div key={team._id} className="border p-4 rounded bg-gray-50 flex justify-between items-start">
-                    <div className="flex-1">
-                      <h4 className="font-bold text-lg text-gray-800">{team.name}</h4>
-                      <p className="text-sm text-gray-600 mt-1">
+                  <div key={team._id} className="border p-4 rounded bg-gray-50 flex flex-col md:flex-row justify-between items-start">
+                    <div className="flex-1 w-full">
+                      <div className="flex justify-between items-center mb-2">
+                        <h4 className="font-bold text-lg text-gray-800">{team.name}</h4>
+                        <div className="space-x-2">
+                          <button onClick={() => setEditTeam(team)} className="text-blue-600 text-xs hover:underline">Edit</button>
+                          <button onClick={() => promptDeleteTeam(team)} className="text-red-600 text-xs hover:underline">Delete Team</button>
+                        </div>
+                      </div>
+                      
+                      <div className="text-sm text-gray-600 mb-2">
                         <span className="font-semibold">Lead:</span> {team.lead?.displayName || 'Unassigned'}
-                      </p>
-                      <div className="text-sm text-gray-600 mt-1">
-                        <span className="font-semibold">Members: </span> 
+                      </div>
+                      
+                      <div className="text-sm text-gray-600">
+                        <span className="font-semibold block mb-1">Members: </span> 
                         {team.members && team.members.length > 0 ? (
-                          <span className="text-gray-500">
-                            {team.members.map(m => m.displayName).join(', ')}
-                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            {team.members.map(m => (
+                              <span key={m._id} className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                {m.displayName}
+                                <button 
+                                  onClick={() => handleRemoveMemberFromTeam(team, m._id)}
+                                  className="ml-1.5 text-blue-400 hover:text-blue-600 focus:outline-none"
+                                  title="Remove from team"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
                         ) : (
                           <span className="text-gray-400 italic">No members assigned</span>
                         )}
                       </div>
-                    </div>
-                    <div className="flex flex-col space-y-2 ml-4">
-                      <button onClick={() => setEditTeam(team)} className="text-blue-600 text-sm hover:underline text-right">Edit</button>
-                      <button onClick={() => promptDeleteTeam(team)} className="text-red-600 text-sm hover:underline text-right">Delete</button>
                     </div>
                   </div>
                 ))}
@@ -459,7 +512,8 @@ const AdminDashboard = () => {
                     onChange={e => setEditTeam({...editTeam, lead: e.target.value})}
                   >
                     <option value="">No Lead</option>
-                    {users.filter(u => u.role !== 'admin').map(u => (
+                    {/* Show current lead + any unassigned users */}
+                    {availableLeadsForEdit(editTeam.lead?._id || editTeam.lead).map(u => (
                       <option key={u._id} value={u._id}>{u.displayName}</option>
                     ))}
                   </select>
@@ -468,26 +522,28 @@ const AdminDashboard = () => {
                 {/* Edit Members Selection */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Team Members</label>
-                  <p className="text-xs text-gray-500 mb-2">Showing unassigned users + current members.</p>
+                  <p className="text-xs text-gray-500 mb-2">Select members.</p>
                   <div className="h-48 overflow-y-auto border border-gray-300 rounded p-2 space-y-2">
                     {availableUsersForEditTeam(editTeam._id).length > 0 ? (
-                      availableUsersForEditTeam(editTeam._id).map(u => {
-                        const isMember = editTeam.members.some(m => (m._id || m) === u._id);
-                        return (
-                          <div key={u._id} className="flex items-center">
-                            <input 
-                              type="checkbox" 
-                              id={`edit-${u._id}`}
-                              checked={isMember}
-                              onChange={() => toggleEditTeamMember(u._id)}
-                              className="mr-2"
-                            />
-                            <label htmlFor={`edit-${u._id}`} className="text-sm cursor-pointer">
-                              {u.displayName}
-                            </label>
-                          </div>
-                        );
-                      })
+                      availableUsersForEditTeam(editTeam._id)
+                        .filter(u => u._id !== (editTeam.lead?._id || editTeam.lead)) // Don't list the lead as a regular member
+                        .map(u => {
+                          const isMember = editTeam.members.some(m => (m._id || m) === u._id);
+                          return (
+                            <div key={u._id} className="flex items-center">
+                              <input 
+                                type="checkbox" 
+                                id={`edit-${u._id}`}
+                                checked={isMember}
+                                onChange={() => toggleEditTeamMember(u._id)}
+                                className="mr-2"
+                              />
+                              <label htmlFor={`edit-${u._id}`} className="text-sm cursor-pointer">
+                                {u.displayName}
+                              </label>
+                            </div>
+                          );
+                        })
                     ) : (
                       <p className="text-xs text-gray-400 italic">No available users found.</p>
                     )}
