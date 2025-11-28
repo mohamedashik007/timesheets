@@ -50,11 +50,18 @@ const updateTeam = async (req, res) => {
 
     // Handle Lead Change
     if (leadId && oldTeam.lead?.toString() !== leadId) {
+       // Demote old lead if they exist
+       if (oldTeam.lead) {
+         await User.findByIdAndUpdate(oldTeam.lead, { role: 'user' });
+       }
+       // Promote new lead
        await User.findByIdAndUpdate(leadId, { team: teamId, role: 'team_lead' });
+    } else if (!leadId && oldTeam.lead) {
+       // If lead is removed entirely, demote old lead
+       await User.findByIdAndUpdate(oldTeam.lead, { role: 'user' });
     }
 
-    // Handle Removed Members: Clear team field ONLY for users removed from list
-    // (excluding the lead to be safe)
+    // Handle Removed Members
     const idsToKeepInTeam = [...(memberIds || [])];
     if (leadId) idsToKeepInTeam.push(leadId);
 
@@ -82,13 +89,27 @@ const updateTeam = async (req, res) => {
   }
 };
 
-// Delete Team
+// Delete Team (FIXED: Reverts Lead Role)
 const deleteTeam = async (req, res) => {
   try {
     const teamId = req.params.id;
+
+    // 1. Find team to identify the lead
+    const team = await Team.findById(teamId);
+    if (!team) return res.json({ message: 'Team already deleted' });
+
+    // 2. Revert Lead role to 'user'
+    if (team.lead) {
+      await User.findByIdAndUpdate(team.lead, { role: 'user' });
+    }
+
+    // 3. Clear team reference for all members
     await User.updateMany({ team: teamId }, { team: null });
+
+    // 4. Delete the team
     await Team.findByIdAndDelete(teamId);
-    res.json({ message: 'Team deleted' });
+    
+    res.json({ message: 'Team deleted and lead demoted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
