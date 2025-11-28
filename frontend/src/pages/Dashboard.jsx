@@ -38,7 +38,8 @@ const Dashboard = () => {
   }, [navigate]);
 
   const handleLogout = () => {
-    window.location.href = "http://localhost:3000/logout";
+    // UPDATED: Point to the correct new route structure
+    window.location.href = "http://localhost:3000/auth/logout";
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
