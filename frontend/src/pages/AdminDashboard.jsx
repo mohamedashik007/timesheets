@@ -8,14 +8,23 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
+  // Notification State
+  const [notification, setNotification] = useState(null); // { type: 'success'|'error', message: '' }
+
   // Form States
   const [newUser, setNewUser] = useState({ email: '', name: '', role: 'user', company: '' });
-  const [newTeam, setNewTeam] = useState({ name: '', leadId: '' });
+  const [newTeam, setNewTeam] = useState({ name: '', leadId: '', memberIds: [] });
   
   // UI States
   const [activeTab, setActiveTab] = useState('users');
-  const [editUser, setEditUser] = useState(null); // If not null, show edit modal
-  const [editTeam, setEditTeam] = useState(null); // If not null, show edit modal
+  const [editUser, setEditUser] = useState(null);
+  const [editTeam, setEditTeam] = useState(null);
+
+  // Helper: Show Notification
+  const showNotify = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
 
   useEffect(() => {
     fetchInitialData();
@@ -59,11 +68,12 @@ const AdminDashboard = () => {
       body: JSON.stringify(newUser)
     });
     if (res.ok) {
-      alert('User added successfully');
+      showNotify('User added successfully');
       setNewUser({ email: '', name: '', role: 'user', company: '' });
       refreshData();
     } else {
-      alert('Failed to add user');
+      const err = await res.json();
+      showNotify(err.message || 'Failed to add user', 'error');
     }
   };
 
@@ -76,26 +86,44 @@ const AdminDashboard = () => {
       body: JSON.stringify(newTeam)
     });
     if (res.ok) {
-      alert('Team created successfully');
-      setNewTeam({ name: '', leadId: '' });
+      showNotify('Team created successfully');
+      setNewTeam({ name: '', leadId: '', memberIds: [] });
       refreshData();
     } else {
-      alert('Failed to create team');
+      showNotify('Failed to create team', 'error');
     }
+  };
+
+  const toggleNewTeamMember = (userId) => {
+    setNewTeam(prev => {
+      const exists = prev.memberIds.includes(userId);
+      if (exists) return { ...prev, memberIds: prev.memberIds.filter(id => id !== userId) };
+      return { ...prev, memberIds: [...prev.memberIds, userId] };
+    });
   };
 
   // --- HANDLERS: DELETE ---
 
   const handleDeleteUser = async (id) => {
     if (!window.confirm("Are you sure? This user will be deleted permanently.")) return;
-    await fetch(`http://localhost:3000/api/users/${id}`, { method: 'DELETE', credentials: 'include' });
-    refreshData();
+    const res = await fetch(`http://localhost:3000/api/users/${id}`, { method: 'DELETE', credentials: 'include' });
+    if (res.ok) {
+      showNotify('User deleted');
+      refreshData();
+    } else {
+      showNotify('Failed to delete user', 'error');
+    }
   };
 
   const handleDeleteTeam = async (id) => {
     if (!window.confirm("Are you sure? Members will be unassigned.")) return;
-    await fetch(`http://localhost:3000/api/teams/${id}`, { method: 'DELETE', credentials: 'include' });
-    refreshData();
+    const res = await fetch(`http://localhost:3000/api/teams/${id}`, { method: 'DELETE', credentials: 'include' });
+    if (res.ok) {
+      showNotify('Team deleted');
+      refreshData();
+    } else {
+      showNotify('Failed to delete team', 'error');
+    }
   };
 
   // --- HANDLERS: EDIT ---
@@ -113,32 +141,71 @@ const AdminDashboard = () => {
       })
     });
     if (res.ok) {
+      showNotify('User updated');
       setEditUser(null);
       refreshData();
+    } else {
+      showNotify('Update failed', 'error');
     }
   };
 
   const handleUpdateTeam = async (e) => {
     e.preventDefault();
+    // Prepare Member IDs
+    // editTeam.members might be populated objects or IDs depending on how we manipulated it
+    // We ensure we send an array of IDs
+    const memberIds = editTeam.members.map(m => m._id || m);
+
     const res = await fetch(`http://localhost:3000/api/teams/${editTeam._id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
         name: editTeam.name,
-        leadId: editTeam.lead?._id || editTeam.lead // Handle object or ID string
+        leadId: editTeam.lead?._id || editTeam.lead,
+        memberIds: memberIds
       })
     });
     if (res.ok) {
+      showNotify('Team updated');
       setEditTeam(null);
       refreshData();
+    } else {
+      showNotify('Update failed', 'error');
     }
+  };
+
+  const toggleEditTeamMember = (userId) => {
+    setEditTeam(prev => {
+      // Helper to check if ID exists in array (handling both populated objects and ID strings)
+      const currentIds = prev.members.map(m => m._id || m);
+      const exists = currentIds.includes(userId);
+      
+      let newMembers;
+      if (exists) {
+        newMembers = prev.members.filter(m => (m._id || m) !== userId);
+      } else {
+        // Add just the ID string is sufficient for the update payload
+        newMembers = [...prev.members, userId];
+      }
+      return { ...prev, members: newMembers };
+    });
   };
 
   if (loading) return <div className="p-10 text-center">Loading...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 relative">
+      
+      {/* Notification Banner */}
+      {notification && (
+        <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded shadow-lg text-white ${
+          notification.type === 'error' ? 'bg-red-500' : 'bg-green-500'
+        } transition-all duration-300`}>
+          {notification.message}
+        </div>
+      )}
+
       <nav className="bg-gray-800 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <span className="font-bold text-xl">Admin Console</span>
@@ -158,7 +225,6 @@ const AdminDashboard = () => {
         {/* --- USERS TAB --- */}
         {activeTab === 'users' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {/* Add User Form */}
             <div className="bg-white p-6 rounded-lg shadow h-fit">
               <h3 className="text-lg font-bold mb-4">Add New User</h3>
               <form onSubmit={handleAddUser} className="space-y-4">
@@ -186,7 +252,6 @@ const AdminDashboard = () => {
               </form>
             </div>
 
-            {/* User List */}
             <div className="md:col-span-2 bg-white p-6 rounded-lg shadow">
               <h3 className="text-lg font-bold mb-4">All Users</h3>
               <div className="overflow-x-auto">
@@ -242,6 +307,31 @@ const AdminDashboard = () => {
                     ))}
                   </select>
                 </div>
+                
+                {/* Add Members Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Assign Members</label>
+                  <div className="h-40 overflow-y-auto border border-gray-300 rounded p-2 space-y-2">
+                    {users.filter(u => u.role === 'user' || u.role === 'team_lead').map(u => (
+                      <div key={u._id} className="flex items-center">
+                        <input 
+                          type="checkbox" 
+                          id={`new-${u._id}`}
+                          checked={newTeam.memberIds.includes(u._id)}
+                          onChange={() => toggleNewTeamMember(u._id)}
+                          className="mr-2"
+                        />
+                        <label htmlFor={`new-${u._id}`} className="text-sm cursor-pointer">
+                          {u.displayName}
+                          <span className="text-xs text-gray-400 ml-1">
+                            {u.team ? `(In Team: ${u.team.name})` : '(Unassigned)'}
+                          </span>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <button type="submit" className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700">Create Team</button>
               </form>
             </div>
@@ -254,6 +344,7 @@ const AdminDashboard = () => {
                     <div>
                       <h4 className="font-bold text-gray-800">{team.name}</h4>
                       <p className="text-sm text-gray-600">Lead: {team.lead?.displayName || 'Unassigned'}</p>
+                      <p className="text-xs text-gray-500 mt-1">Members: {team.members.length}</p>
                     </div>
                     <div className="space-x-2">
                       <button onClick={() => setEditTeam(team)} className="text-blue-600 text-sm hover:underline">Edit</button>
@@ -268,7 +359,7 @@ const AdminDashboard = () => {
 
         {/* --- EDIT USER MODAL --- */}
         {editUser && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40">
             <div className="bg-white p-6 rounded shadow-lg w-full max-w-md">
               <h3 className="text-xl font-bold mb-4">Edit User</h3>
               <form onSubmit={handleUpdateUser} className="space-y-4">
@@ -299,8 +390,8 @@ const AdminDashboard = () => {
 
         {/* --- EDIT TEAM MODAL --- */}
         {editTeam && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-            <div className="bg-white p-6 rounded shadow-lg w-full max-w-md">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40">
+            <div className="bg-white p-6 rounded shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
               <h3 className="text-xl font-bold mb-4">Edit Team</h3>
               <form onSubmit={handleUpdateTeam} className="space-y-4">
                 <div>
@@ -320,6 +411,37 @@ const AdminDashboard = () => {
                     ))}
                   </select>
                 </div>
+
+                {/* Edit Members Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Team Members</label>
+                  <div className="h-48 overflow-y-auto border border-gray-300 rounded p-2 space-y-2">
+                    {users.filter(u => u.role === 'user' || u.role === 'team_lead').map(u => {
+                      const isMember = editTeam.members.some(m => (m._id || m) === u._id);
+                      return (
+                        <div key={u._id} className="flex items-center">
+                          <input 
+                            type="checkbox" 
+                            id={`edit-${u._id}`}
+                            checked={isMember}
+                            onChange={() => toggleEditTeamMember(u._id)}
+                            className="mr-2"
+                          />
+                          <label htmlFor={`edit-${u._id}`} className="text-sm cursor-pointer">
+                            {u.displayName}
+                            {/* Show warning if stealing from another team */}
+                            {u.team && u.team._id !== editTeam._id && !isMember && (
+                              <span className="text-xs text-red-400 ml-1">
+                                (Moves from {u.team.name})
+                              </span>
+                            )}
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="flex justify-end gap-2 mt-4">
                   <button type="button" onClick={() => setEditTeam(null)} className="px-4 py-2 text-gray-600">Cancel</button>
                   <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Save Changes</button>
