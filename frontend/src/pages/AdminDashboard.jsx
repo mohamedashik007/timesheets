@@ -9,18 +9,20 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
 
   // Notification State
-  const [notification, setNotification] = useState(null); // { type: 'success'|'error', message: '' }
+  const [notification, setNotification] = useState(null);
 
   // Form States
   const [newUser, setNewUser] = useState({ email: '', name: '', role: 'user', company: '' });
   const [newTeam, setNewTeam] = useState({ name: '', leadId: '', memberIds: [] });
   
-  // UI States
+  // UI States (Modals)
   const [activeTab, setActiveTab] = useState('users');
   const [editUser, setEditUser] = useState(null);
   const [editTeam, setEditTeam] = useState(null);
+  
+  // Delete Confirmation State
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // { type: 'user'|'team', id: '123', name: 'Bob' }
 
-  // Helper: Show Notification
   const showNotify = (message, type = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
@@ -103,27 +105,32 @@ const AdminDashboard = () => {
   };
 
   // --- HANDLERS: DELETE ---
-
-  const handleDeleteUser = async (id) => {
-    if (!window.confirm("Are you sure? This user will be deleted permanently.")) return;
-    const res = await fetch(`http://localhost:3000/api/users/${id}`, { method: 'DELETE', credentials: 'include' });
-    if (res.ok) {
-      showNotify('User deleted');
-      refreshData();
-    } else {
-      showNotify('Failed to delete user', 'error');
-    }
+  // These now just open the modal
+  const promptDeleteUser = (u) => {
+    setDeleteConfirm({ type: 'user', id: u._id, name: u.displayName });
   };
 
-  const handleDeleteTeam = async (id) => {
-    if (!window.confirm("Are you sure? Members will be unassigned.")) return;
-    const res = await fetch(`http://localhost:3000/api/teams/${id}`, { method: 'DELETE', credentials: 'include' });
+  const promptDeleteTeam = (t) => {
+    setDeleteConfirm({ type: 'team', id: t._id, name: t.name });
+  };
+
+  // The actual delete logic called by the Modal
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+
+    const endpoint = deleteConfirm.type === 'user' ? 'users' : 'teams';
+    const res = await fetch(`http://localhost:3000/api/${endpoint}/${deleteConfirm.id}`, { 
+      method: 'DELETE', 
+      credentials: 'include' 
+    });
+
     if (res.ok) {
-      showNotify('Team deleted');
+      showNotify(`${deleteConfirm.type === 'user' ? 'User' : 'Team'} deleted`);
       refreshData();
     } else {
-      showNotify('Failed to delete team', 'error');
+      showNotify('Failed to delete', 'error');
     }
+    setDeleteConfirm(null);
   };
 
   // --- HANDLERS: EDIT ---
@@ -151,11 +158,7 @@ const AdminDashboard = () => {
 
   const handleUpdateTeam = async (e) => {
     e.preventDefault();
-    // Prepare Member IDs
-    // editTeam.members might be populated objects or IDs depending on how we manipulated it
-    // We ensure we send an array of IDs
     const memberIds = editTeam.members.map(m => m._id || m);
-
     const res = await fetch(`http://localhost:3000/api/teams/${editTeam._id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -177,15 +180,12 @@ const AdminDashboard = () => {
 
   const toggleEditTeamMember = (userId) => {
     setEditTeam(prev => {
-      // Helper to check if ID exists in array (handling both populated objects and ID strings)
       const currentIds = prev.members.map(m => m._id || m);
       const exists = currentIds.includes(userId);
-      
       let newMembers;
       if (exists) {
         newMembers = prev.members.filter(m => (m._id || m) !== userId);
       } else {
-        // Add just the ID string is sufficient for the update payload
         newMembers = [...prev.members, userId];
       }
       return { ...prev, members: newMembers };
@@ -203,6 +203,33 @@ const AdminDashboard = () => {
           notification.type === 'error' ? 'bg-red-500' : 'bg-green-500'
         } transition-all duration-300`}>
           {notification.message}
+        </div>
+      )}
+
+      {/* --- CONFIRM DELETE MODAL --- */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-6 rounded shadow-lg w-full max-w-sm">
+            <h3 className="text-lg font-bold text-red-600 mb-2">Confirm Deletion</h3>
+            <p className="text-gray-700 mb-6">
+              Are you sure you want to delete <strong>{deleteConfirm.name}</strong>? 
+              {deleteConfirm.type === 'user' ? ' They will lose access immediately.' : ' Members will be unassigned.'}
+            </p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setDeleteConfirm(null)} 
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmDelete} 
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -276,7 +303,7 @@ const AdminDashboard = () => {
                         <td className="px-3 py-2 text-right space-x-2">
                           <button onClick={() => setEditUser(u)} className="text-blue-600 hover:text-blue-900 text-sm">Edit</button>
                           {u.role !== 'admin' && (
-                             <button onClick={() => handleDeleteUser(u._id)} className="text-red-600 hover:text-red-900 text-sm">Delete</button>
+                             <button onClick={() => promptDeleteUser(u)} className="text-red-600 hover:text-red-900 text-sm">Delete</button>
                           )}
                         </td>
                       </tr>
@@ -308,7 +335,6 @@ const AdminDashboard = () => {
                   </select>
                 </div>
                 
-                {/* Add Members Selection */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Assign Members</label>
                   <div className="h-40 overflow-y-auto border border-gray-300 rounded p-2 space-y-2">
@@ -348,7 +374,7 @@ const AdminDashboard = () => {
                     </div>
                     <div className="space-x-2">
                       <button onClick={() => setEditTeam(team)} className="text-blue-600 text-sm hover:underline">Edit</button>
-                      <button onClick={() => handleDeleteTeam(team._id)} className="text-red-600 text-sm hover:underline">Delete</button>
+                      <button onClick={() => promptDeleteTeam(team)} className="text-red-600 text-sm hover:underline">Delete</button>
                     </div>
                   </div>
                 ))}
@@ -411,8 +437,7 @@ const AdminDashboard = () => {
                     ))}
                   </select>
                 </div>
-
-                {/* Edit Members Selection */}
+                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Team Members</label>
                   <div className="h-48 overflow-y-auto border border-gray-300 rounded p-2 space-y-2">
@@ -429,7 +454,6 @@ const AdminDashboard = () => {
                           />
                           <label htmlFor={`edit-${u._id}`} className="text-sm cursor-pointer">
                             {u.displayName}
-                            {/* Show warning if stealing from another team */}
                             {u.team && u.team._id !== editTeam._id && !isMember && (
                               <span className="text-xs text-red-400 ml-1">
                                 (Moves from {u.team.name})
