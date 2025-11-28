@@ -3,21 +3,29 @@ const mongoose = require('mongoose');
 const UserSchema = new mongoose.Schema({
   googleId: {
     type: String,
-    required: true,
-    unique: true, // Important: Ensures we don't create duplicate users
+    // unique: true, // REMOVED: Pre-created users won't have this yet
+    sparse: true     // ADDED: Allows multiple docs to have null/undefined googleId
   },
-  displayName: {
+  email: {
     type: String,
     required: true,
+    unique: true,
+    lowercase: true,
+    trim: true
   },
+  displayName: String,
   firstName: String,
   lastName: String,
   image: String,
-  email: String,
   role: {
     type: String,
-    enum: ['user', 'admin'], // Valid values
-    default: 'user'          // Default role
+    enum: ['user', 'admin', 'team_lead'], // Added team_lead
+    default: 'user'
+  },
+  team: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Team',
+    default: null
   },
   createdAt: {
     type: Date,

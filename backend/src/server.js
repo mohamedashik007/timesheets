@@ -4,121 +4,142 @@ const mongoose = require('mongoose');
 const passport = require('passport');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
-const cors = require('cors'); // Required for Frontend-Backend communication
+const cors = require('cors');
 const AllowedEmail = require('./models/AllowedEmail');
+const User = require('./models/User');
+const Team = require('./models/Team');
 
 // Passport Config
 require('./config/passport')(passport);
 
 const app = express();
 
-// --- 1. Middleware Setup ---
-
-// CORS: Allow React Frontend to make requests
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173', // Frontend URL
-  credentials: true // Important: Allows session cookies to be sent back and forth
+  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  credentials: true
 }));
 
-// Body Parser
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// DB Connection
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB Atlas Connected'))
   .catch(err => console.log(err));
 
-// Session Setup
 app.use(
   session({
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
-    cookie: {
-      maxAge: 24 * 60 * 60 * 1000, // 1 day
-      // secure: true, // Uncomment this line if using HTTPS (Production)
-      httpOnly: true 
-    }
+    cookie: { maxAge: 24 * 60 * 60 * 1000, // secure: true, // Uncomment this line if using HTTPS (Production),
+    httpOnly: true }
   })
 );
 
-// Passport Middleware
 app.use(passport.initialize());
 app.use(passport.session());
 
-// --- 2. Custom Middleware Definitions ---
-// (Must be defined BEFORE they are used in routes)
-
+// --- Middleware ---
 const ensureAdmin = (req, res, next) => {
-  if (req.isAuthenticated() && req.user.role === 'admin') {
-    return next();
-  }
+  if (req.isAuthenticated() && req.user.role === 'admin') return next();
   res.status(403).json({ message: 'Access Denied: Admin rights required.' });
 };
 
 const ensureAuth = (req, res, next) => {
-  if (req.isAuthenticated()) {
-    return next();
-  }
+  if (req.isAuthenticated()) return next();
   res.status(401).json({ message: 'Not Authenticated' });
 };
 
-// --- 3. Routes ---
-
-// A. Auth Routes
-// ---------------------------------------------------------
+// --- Auth Routes ---
 app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-
-// The Callback Route (Fixed for React Redirect)
-app.get(
-  '/auth/google/callback',
-  passport.authenticate('google', { 
-    failureRedirect: 'http://localhost:5173/unauthorized' 
-  }),
-  (req, res) => {
-    // Successful authentication
-    // Redirect to the React Dashboard
-    res.redirect('http://localhost:5173/dashboard');
-  }
+app.get('/auth/google/callback', 
+  passport.authenticate('google', { failureRedirect: 'http://localhost:5173/unauthorized' }),
+  (req, res) => res.redirect('http://localhost:5173/dashboard')
 );
+app.get('/logout', (req, res, next) => {
+  req.logout((err) => {
+    if (err) return next(err);
+    res.redirect('http://localhost:5173');
+  });
+});
 
-// B. API Routes (For React to fetch data)
-// ---------------------------------------------------------
+// --- API Routes ---
 
-// Get Current User (Frontend calls this to see who is logged in)
 app.get('/api/current_user', ensureAuth, (req, res) => {
   res.json(req.user);
 });
 
-// Admin: Add Allowed Email
-app.post('/admin/allow-email', ensureAdmin, async (req, res) => {
+// 1. GET ALL USERS (For Admin UI)
+app.get('/api/users', ensureAdmin, async (req, res) => {
   try {
-    const { email } = req.body;
-    if (!email) return res.status(400).send('Email is required');
-
-    const existing = await AllowedEmail.findOne({ email: email.toLowerCase() });
-    if (existing) return res.status(400).send('Email already allowed');
-
-    await AllowedEmail.create({ 
-        email: email.toLowerCase(),
-        addedBy: req.user.email 
-    });
-
-    res.status(200).send(`Success! ${email} can now login.`);
+    const users = await User.find().populate('team');
+    res.json(users);
   } catch (err) {
-    res.status(500).send(err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Logout Route
-app.get('/logout', (req, res, next) => {
-  req.logout((err) => {
-    if (err) { return next(err); }
-    // Redirect back to Frontend Login page
-    res.redirect('http://localhost:5173');
-  });
+// 2. ADD NEW USER (Pre-create + Whitelist)
+app.post('/api/users', ensureAdmin, async (req, res) => {
+  try {
+    const { email, name, role } = req.body;
+    const lowerEmail = email.toLowerCase();
+
+    // A. Add to Whitelist
+    const existingAllow = await AllowedEmail.findOne({ email: lowerEmail });
+    if (!existingAllow) {
+      await AllowedEmail.create({ email: lowerEmail, addedBy: req.user.email });
+    }
+
+    // B. Check if User exists (could be pre-created or logged in)
+    let user = await User.findOne({ email: lowerEmail });
+    if (user) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    // C. Create Placeholder User
+    const newUser = await User.create({
+      email: lowerEmail,
+      displayName: name,
+      role: role || 'user'
+    });
+
+    res.status(201).json(newUser);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. GET TEAMS
+app.get('/api/teams', ensureAdmin, async (req, res) => {
+  try {
+    const teams = await Team.find().populate('lead').populate('members');
+    res.json(teams);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. CREATE TEAM
+app.post('/api/teams', ensureAdmin, async (req, res) => {
+  try {
+    const { name, leadId } = req.body;
+    
+    const newTeam = await Team.create({ name, lead: leadId || null });
+    
+    // If a lead was assigned, update that User's team and role
+    if (leadId) {
+      await User.findByIdAndUpdate(leadId, { 
+        team: newTeam._id,
+        role: 'team_lead' // Promote to team lead
+      });
+    }
+
+    res.status(201).json(newTeam);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
