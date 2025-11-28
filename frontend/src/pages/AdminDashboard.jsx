@@ -21,7 +21,7 @@ const AdminDashboard = () => {
   const [editTeam, setEditTeam] = useState(null);
   
   // Delete Confirmation State
-  const [deleteConfirm, setDeleteConfirm] = useState(null); // { type: 'user'|'team', id: '123', name: 'Bob' }
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   const showNotify = (message, type = 'success') => {
     setNotification({ message, type });
@@ -105,7 +105,6 @@ const AdminDashboard = () => {
   };
 
   // --- HANDLERS: DELETE ---
-  // These now just open the modal
   const promptDeleteUser = (u) => {
     setDeleteConfirm({ type: 'user', id: u._id, name: u.displayName });
   };
@@ -114,7 +113,6 @@ const AdminDashboard = () => {
     setDeleteConfirm({ type: 'team', id: t._id, name: t.name });
   };
 
-  // The actual delete logic called by the Modal
   const confirmDelete = async () => {
     if (!deleteConfirm) return;
 
@@ -191,6 +189,20 @@ const AdminDashboard = () => {
       return { ...prev, members: newMembers };
     });
   };
+
+  // --- FILTER HELPERS ---
+  
+  // Filter for Create Team: Only show users NOT in a team
+  const availableUsersForNewTeam = users.filter(u => 
+    (u.role === 'user' || u.role === 'team_lead') && !u.team
+  );
+
+  // Filter for Edit Team: Show users NOT in a team OR users currently IN this team
+  const availableUsersForEditTeam = (teamId) => users.filter(u => 
+    (u.role === 'user' || u.role === 'team_lead') && 
+    (!u.team || u.team._id === teamId)
+  );
+
 
   if (loading) return <div className="p-10 text-center">Loading...</div>;
 
@@ -288,6 +300,7 @@ const AdminDashboard = () => {
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Team</th> {/* ADDED TEAM COLUMN */}
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
                   </thead>
@@ -300,6 +313,7 @@ const AdminDashboard = () => {
                         </td>
                         <td className="px-3 py-2 text-sm text-gray-600">{u.role}</td>
                         <td className="px-3 py-2 text-sm text-gray-600">{u.company || '-'}</td>
+                        <td className="px-3 py-2 text-sm text-gray-600">{u.team?.name || '-'}</td> {/* ADDED TEAM DATA */}
                         <td className="px-3 py-2 text-right space-x-2">
                           <button onClick={() => setEditUser(u)} className="text-blue-600 hover:text-blue-900 text-sm">Edit</button>
                           {u.role !== 'admin' && (
@@ -337,24 +351,26 @@ const AdminDashboard = () => {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Assign Members</label>
+                  <p className="text-xs text-gray-500 mb-2">Only unassigned users are shown.</p>
                   <div className="h-40 overflow-y-auto border border-gray-300 rounded p-2 space-y-2">
-                    {users.filter(u => u.role === 'user' || u.role === 'team_lead').map(u => (
-                      <div key={u._id} className="flex items-center">
-                        <input 
-                          type="checkbox" 
-                          id={`new-${u._id}`}
-                          checked={newTeam.memberIds.includes(u._id)}
-                          onChange={() => toggleNewTeamMember(u._id)}
-                          className="mr-2"
-                        />
-                        <label htmlFor={`new-${u._id}`} className="text-sm cursor-pointer">
-                          {u.displayName}
-                          <span className="text-xs text-gray-400 ml-1">
-                            {u.team ? `(In Team: ${u.team.name})` : '(Unassigned)'}
-                          </span>
-                        </label>
-                      </div>
-                    ))}
+                    {availableUsersForNewTeam.length > 0 ? (
+                      availableUsersForNewTeam.map(u => (
+                        <div key={u._id} className="flex items-center">
+                          <input 
+                            type="checkbox" 
+                            id={`new-${u._id}`}
+                            checked={newTeam.memberIds.includes(u._id)}
+                            onChange={() => toggleNewTeamMember(u._id)}
+                            className="mr-2"
+                          />
+                          <label htmlFor={`new-${u._id}`} className="text-sm cursor-pointer">
+                            {u.displayName} <span className='text-xs text-gray-400'>({u.email})</span>
+                          </label>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-gray-400 italic">No available users found.</p>
+                    )}
                   </div>
                 </div>
 
@@ -366,15 +382,26 @@ const AdminDashboard = () => {
               <h3 className="text-lg font-bold mb-4">All Teams</h3>
               <div className="grid gap-4">
                 {teams.map(team => (
-                  <div key={team._id} className="border p-4 rounded bg-gray-50 flex justify-between items-center">
-                    <div>
-                      <h4 className="font-bold text-gray-800">{team.name}</h4>
-                      <p className="text-sm text-gray-600">Lead: {team.lead?.displayName || 'Unassigned'}</p>
-                      <p className="text-xs text-gray-500 mt-1">Members: {team.members.length}</p>
+                  <div key={team._id} className="border p-4 rounded bg-gray-50 flex justify-between items-start">
+                    <div className="flex-1">
+                      <h4 className="font-bold text-lg text-gray-800">{team.name}</h4>
+                      <p className="text-sm text-gray-600 mt-1">
+                        <span className="font-semibold">Lead:</span> {team.lead?.displayName || 'Unassigned'}
+                      </p>
+                      <div className="text-sm text-gray-600 mt-1">
+                        <span className="font-semibold">Members: </span> 
+                        {team.members && team.members.length > 0 ? (
+                          <span className="text-gray-500">
+                            {team.members.map(m => m.displayName).join(', ')}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 italic">No members assigned</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="space-x-2">
-                      <button onClick={() => setEditTeam(team)} className="text-blue-600 text-sm hover:underline">Edit</button>
-                      <button onClick={() => promptDeleteTeam(team)} className="text-red-600 text-sm hover:underline">Delete</button>
+                    <div className="flex flex-col space-y-2 ml-4">
+                      <button onClick={() => setEditTeam(team)} className="text-blue-600 text-sm hover:underline text-right">Edit</button>
+                      <button onClick={() => promptDeleteTeam(team)} className="text-red-600 text-sm hover:underline text-right">Delete</button>
                     </div>
                   </div>
                 ))}
@@ -437,32 +464,33 @@ const AdminDashboard = () => {
                     ))}
                   </select>
                 </div>
-                
+
+                {/* Edit Members Selection */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Team Members</label>
+                  <p className="text-xs text-gray-500 mb-2">Showing unassigned users + current members.</p>
                   <div className="h-48 overflow-y-auto border border-gray-300 rounded p-2 space-y-2">
-                    {users.filter(u => u.role === 'user' || u.role === 'team_lead').map(u => {
-                      const isMember = editTeam.members.some(m => (m._id || m) === u._id);
-                      return (
-                        <div key={u._id} className="flex items-center">
-                          <input 
-                            type="checkbox" 
-                            id={`edit-${u._id}`}
-                            checked={isMember}
-                            onChange={() => toggleEditTeamMember(u._id)}
-                            className="mr-2"
-                          />
-                          <label htmlFor={`edit-${u._id}`} className="text-sm cursor-pointer">
-                            {u.displayName}
-                            {u.team && u.team._id !== editTeam._id && !isMember && (
-                              <span className="text-xs text-red-400 ml-1">
-                                (Moves from {u.team.name})
-                              </span>
-                            )}
-                          </label>
-                        </div>
-                      );
-                    })}
+                    {availableUsersForEditTeam(editTeam._id).length > 0 ? (
+                      availableUsersForEditTeam(editTeam._id).map(u => {
+                        const isMember = editTeam.members.some(m => (m._id || m) === u._id);
+                        return (
+                          <div key={u._id} className="flex items-center">
+                            <input 
+                              type="checkbox" 
+                              id={`edit-${u._id}`}
+                              checked={isMember}
+                              onChange={() => toggleEditTeamMember(u._id)}
+                              className="mr-2"
+                            />
+                            <label htmlFor={`edit-${u._id}`} className="text-sm cursor-pointer">
+                              {u.displayName}
+                            </label>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-xs text-gray-400 italic">No available users found.</p>
+                    )}
                   </div>
                 </div>
 
