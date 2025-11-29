@@ -17,13 +17,22 @@ const Dashboard = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [viewingUserId, setViewingUserId] = useState('');
 
-  // Helper: Check if the selected month is editable (Current Month or Future)
+  // --- HELPER: CHECK EDIT PERMISSION ---
   const isMonthEditable = () => {
-    const currentMonth = new Date().toISOString().slice(0, 7); // "YYYY-MM"
-    return selectedMonth >= currentMonth;
+    // Calculate the cutoff date (1st day of previous month)
+    const today = new Date();
+    const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const previousMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    
+    // Parse selected month
+    const [selYear, selMonth] = selectedMonth.split('-').map(Number);
+    const selectedDate = new Date(selYear, selMonth - 1, 1);
+
+    // Allow if selected month is same or after previous month
+    return selectedDate >= previousMonth;
   };
 
-  // 1. INITIAL LOAD
+  // --- 1. INITIAL LOAD ---
   useEffect(() => {
     const init = async () => {
       try {
@@ -51,7 +60,7 @@ const Dashboard = () => {
     init();
   }, [navigate]);
 
-  // 2. FETCH DATA
+  // --- 2. FETCH DATA ---
   const fetchTimesheets = useCallback(async () => {
     const targetId = viewingUserId || user?._id;
     if (!targetId) return;
@@ -98,9 +107,9 @@ const Dashboard = () => {
     fetchTimesheets();
   }, [fetchTimesheets]);
 
-  // 3. LOCAL UPDATES
+  // --- 3. LOCAL UPDATES ---
   const updateLocalEntry = (dateStr, val) => {
-    if (!isMonthEditable()) return; // Prevent edits if past month
+    if (!isMonthEditable()) return;
 
     if (val === '') {
       setEntries(prev => ({ ...prev, [dateStr]: '' }));
@@ -129,7 +138,7 @@ const Dashboard = () => {
     updateLocalEntry(dateStr, val - 0.5);
   };
 
-  // 4. SAVE
+  // --- 4. SAVE ---
   const handleSave = async () => {
     if (!isMonthEditable()) return;
     setIsSaving(true);
@@ -169,17 +178,15 @@ const Dashboard = () => {
     window.location.href = "http://localhost:3000/auth/logout";
   };
 
-  // RENDER CALENDAR
+  // --- RENDER HELPERS ---
   const renderCalendar = () => {
     const [year, month] = selectedMonth.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     const startDay = new Date(year, month - 1, 1).getDay(); 
     
     const cells = [];
-    const isEditable = isMonthEditable(); // Check lock status once
+    const isEditable = isMonthEditable(); 
     
-    // Empty spacers (Only for Desktop view to align Mon-Sun)
-    // On mobile (grid-cols-2), these spacers would look weird, so we hide them
     for (let i = 0; i < startDay; i++) {
       cells.push(<div key={`empty-${i}`} className="h-32 bg-transparent hidden md:block"></div>);
     }
@@ -189,8 +196,6 @@ const Dashboard = () => {
       const dateObj = new Date(dateStr);
       const hours = entries[dateStr] ?? 0;
       const isModified = modifiedDates.has(dateStr);
-      
-      // Get short day name for Mobile View (e.g., "Mon")
       const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
 
       cells.push(
@@ -198,10 +203,8 @@ const Dashboard = () => {
           isModified ? 'bg-blue-50 border-blue-300' : 'bg-gray-100 border-gray-200 hover:border-gray-300'
         } ${!isEditable ? 'opacity-75 bg-gray-200' : ''}`}>
           
-          {/* Header */}
           <div className="flex justify-between items-start">
             <div className="flex flex-col">
-              {/* Day Name (Mobile Only) */}
               <span className="text-xs font-bold text-gray-500 uppercase md:hidden">{dayName}</span>
               <div className="text-xs text-blue-500 font-bold h-4">
                 {isModified && '●'}
@@ -210,7 +213,6 @@ const Dashboard = () => {
             <div className="text-lg font-bold text-gray-700">{d}</div>
           </div>
 
-          {/* Controls */}
           <div className="flex flex-col items-center gap-2">
             <div className="flex items-center justify-center bg-white rounded border border-gray-300 w-20">
               <input 
@@ -221,7 +223,7 @@ const Dashboard = () => {
                 step="0.5"
                 min="0"
                 max="24"
-                disabled={!isEditable} // LOCK INPUT
+                disabled={!isEditable}
                 className="w-full h-10 text-center text-xl font-bold bg-transparent outline-none disabled:text-gray-400 disabled:cursor-not-allowed"
               />
             </div>
@@ -278,7 +280,6 @@ const Dashboard = () => {
 
       <main className="max-w-6xl mx-auto py-8 px-4">
         
-        {/* Controls */}
         <div className="flex flex-col md:flex-row justify-between items-end mb-6 gap-4 sticky top-20 z-10 bg-gray-50 py-2">
           <div className="flex gap-4">
             <div>
@@ -311,7 +312,7 @@ const Dashboard = () => {
           <div className="flex items-center gap-4">
             {!isMonthEditable() && (
               <span className="text-xs font-bold text-red-500 uppercase bg-red-100 px-2 py-1 rounded">
-                Read Only (Past Month)
+                Read Only (Older than 1 Month)
               </span>
             )}
             <div className="bg-blue-50 px-4 py-2 rounded border border-blue-100 text-blue-800">
@@ -333,10 +334,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Grid */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          
-          {/* Weekday Headers (Desktop Only) */}
           <div className="hidden md:grid grid-cols-7 gap-4 mb-4 text-center">
             {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
               <div key={day} className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
@@ -345,7 +343,6 @@ const Dashboard = () => {
             ))}
           </div>
 
-          {/* Days Grid (Responsive) */}
           <div className="grid grid-cols-2 md:grid-cols-7 gap-2 sm:gap-4">
             {renderCalendar()}
           </div>
