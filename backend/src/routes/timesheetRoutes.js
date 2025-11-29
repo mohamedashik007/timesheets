@@ -9,5 +9,6 @@ router.use(ensureAuth);
 router.get('/', timesheetController.getTimesheets);
 router.post('/bulk', timesheetController.saveBulkTimesheets); 
 router.get('/members', timesheetController.getTeamMembers);
+router.get('/stats', timesheetController.getAllUserStats); // NEW ROUTE
 
 module.exports = router;

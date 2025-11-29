@@ -2,7 +2,6 @@ const Timesheet = require('../models/Timesheet');
 const User = require('../models/User');
 const Team = require('../models/Team');
 
-// Helper: Check Permissions
 const canAccessData = async (requester, targetUserId) => {
   if (!requester) return false;
   if (requester._id.toString() === targetUserId) return true;
@@ -18,7 +17,7 @@ const canAccessData = async (requester, targetUserId) => {
 };
 
 // GET /api/timesheets
-const getTimesheets = async (req, res) => {
+exports.getTimesheets = async (req, res) => {
   try {
     const targetUserId = req.query.userId || req.user._id.toString();
     const monthStr = req.query.month;
@@ -32,18 +31,16 @@ const getTimesheets = async (req, res) => {
       month: monthStr
     });
 
-    // Return empty entry list if no sheet exists yet
     if (!sheet) return res.json({ entries: [] }); 
 
     res.json(sheet);
   } catch (err) {
-    console.error("Get Timesheet Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
 
 // POST /api/timesheets/bulk
-const saveBulkTimesheets = async (req, res) => {
+exports.saveBulkTimesheets = async (req, res) => {
   try {
     const { userId, month, entries } = req.body;
     const targetUserId = userId || req.user._id.toString();
@@ -73,8 +70,7 @@ const saveBulkTimesheets = async (req, res) => {
   }
 };
 
-// GET Team Members
-const getTeamMembers = async (req, res) => {
+exports.getTeamMembers = async (req, res) => {
   try {
     if (req.user.role !== 'team_lead') return res.json([]);
     const team = await Team.findOne({ lead: req.user._id }).populate('members', 'displayName email');
@@ -85,5 +81,37 @@ const getTeamMembers = async (req, res) => {
   }
 };
 
-// Correctly export all functions
-module.exports = { getTimesheets, saveBulkTimesheets, getTeamMembers };
+// NEW: GET All User Stats (Admin Only)
+exports.getAllUserStats = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access Denied' });
+    }
+
+    const { month } = req.query;
+
+    // 1. Get all users with their team info
+    const users = await User.find().populate('team', 'name');
+
+    // 2. Get timesheets for the selected month
+    const timesheets = await Timesheet.find({ month });
+
+    // 3. Merge Data
+    const report = users.map(user => {
+      const sheet = timesheets.find(t => t.user.toString() === user._id.toString());
+      return {
+        _id: user._id,
+        displayName: user.displayName,
+        email: user.email,
+        company: user.company || 'N/A',
+        teamName: user.team?.name || 'Unassigned',
+        totalHours: sheet ? sheet.totalHours : 0,
+        entries: sheet ? sheet.entries : [] // For detailed view
+      };
+    });
+
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
