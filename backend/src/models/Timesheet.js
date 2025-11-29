@@ -7,23 +7,19 @@ const TimesheetSchema = new mongoose.Schema({
     required: true
   },
   date: {
-    type: Date, // We will store midnight UTC for the day
+    type: Date,
     required: true
   },
   hours: {
     type: Number,
     required: true,
     min: 0,
-    max: 24
-  },
-  description: {
-    type: String,
-    trim: true,
-    default: ''
+    max: 24,
+    default: 0
   },
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User' // Track who made the last edit (User or Team Lead)
+    ref: 'User'
   }
 }, { timestamps: true });
 

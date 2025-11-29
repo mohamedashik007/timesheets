@@ -8,7 +8,6 @@ const canAccessData = async (requester, targetUserId) => {
   if (requester.role === 'admin') return true;
   
   if (requester.role === 'team_lead') {
-    // Check if targetUser is in a team led by requester
     const team = await Team.findOne({ lead: requester._id });
     if (team && team.members.includes(targetUserId)) {
       return true;
@@ -21,21 +20,20 @@ const canAccessData = async (requester, targetUserId) => {
 const getTimesheets = async (req, res) => {
   try {
     const targetUserId = req.query.userId || req.user._id.toString();
-    const monthStr = req.query.month; // Format "YYYY-MM"
+    const monthStr = req.query.month; // "YYYY-MM"
 
-    // Security Check
     if (!(await canAccessData(req.user, targetUserId))) {
       return res.status(403).json({ message: 'Access Denied' });
     }
 
-    // Calculate Date Range
+    // Get range for the entire month
     const start = new Date(`${monthStr}-01`);
     const end = new Date(new Date(start).setMonth(start.getMonth() + 1));
 
     const entries = await Timesheet.find({
       user: targetUserId,
       date: { $gte: start, $lt: end }
-    }).sort({ date: 1 });
+    });
 
     res.json(entries);
   } catch (err) {
@@ -43,27 +41,26 @@ const getTimesheets = async (req, res) => {
   }
 };
 
-// POST /api/timesheets (Upsert: Create or Update)
+// POST /api/timesheets
 const saveTimesheet = async (req, res) => {
   try {
-    const { userId, date, hours, description } = req.body;
+    const { userId, date, hours } = req.body;
     const targetUserId = userId || req.user._id.toString();
 
-    // Security Check
     if (!(await canAccessData(req.user, targetUserId))) {
       return res.status(403).json({ message: 'Access Denied' });
     }
 
-    // Upsert Logic
     const entryDate = new Date(date);
+    
+    // If hours is 0, we could choose to delete the entry, but updating to 0 is also fine.
     const entry = await Timesheet.findOneAndUpdate(
       { user: targetUserId, date: entryDate },
       { 
         hours, 
-        description, 
         updatedBy: req.user._id 
       },
-      { new: true, upsert: true } // Create if not exists
+      { new: true, upsert: true }
     );
 
     res.json(entry);
@@ -72,14 +69,12 @@ const saveTimesheet = async (req, res) => {
   }
 };
 
-// GET /api/timesheets/team-members (For Lead Dropdown)
+// GET /api/timesheets/team-members
 const getTeamMembers = async (req, res) => {
   try {
     if (req.user.role !== 'team_lead') return res.json([]);
-
     const team = await Team.findOne({ lead: req.user._id }).populate('members', 'displayName email');
     if (!team) return res.json([]);
-
     res.json(team.members);
   } catch (err) {
     res.status(500).json({ error: err.message });
