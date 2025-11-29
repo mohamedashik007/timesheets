@@ -2,7 +2,7 @@ const Timesheet = require('../models/Timesheet');
 const User = require('../models/User');
 const Team = require('../models/Team');
 
-// Helper: Check if requester can access target user's data
+// ... (Keep existing helper 'canAccessData' and 'getTimesheets') ...
 const canAccessData = async (requester, targetUserId) => {
   if (requester._id.toString() === targetUserId) return true;
   if (requester.role === 'admin') return true;
@@ -16,17 +16,15 @@ const canAccessData = async (requester, targetUserId) => {
   return false;
 };
 
-// GET /api/timesheets?userId=...&month=2023-11
 const getTimesheets = async (req, res) => {
   try {
     const targetUserId = req.query.userId || req.user._id.toString();
-    const monthStr = req.query.month; // "YYYY-MM"
+    const monthStr = req.query.month;
 
     if (!(await canAccessData(req.user, targetUserId))) {
       return res.status(403).json({ message: 'Access Denied' });
     }
 
-    // Get range for the entire month
     const start = new Date(`${monthStr}-01`);
     const end = new Date(new Date(start).setMonth(start.getMonth() + 1));
 
@@ -41,9 +39,10 @@ const getTimesheets = async (req, res) => {
   }
 };
 
-// POST /api/timesheets
+// ... (Keep 'saveTimesheet' for single edits if needed, but we focus on bulk) ...
 const saveTimesheet = async (req, res) => {
-  try {
+    // ... existing single save logic ...
+    try {
     const { userId, date, hours } = req.body;
     const targetUserId = userId || req.user._id.toString();
 
@@ -52,14 +51,9 @@ const saveTimesheet = async (req, res) => {
     }
 
     const entryDate = new Date(date);
-    
-    // If hours is 0, we could choose to delete the entry, but updating to 0 is also fine.
     const entry = await Timesheet.findOneAndUpdate(
       { user: targetUserId, date: entryDate },
-      { 
-        hours, 
-        updatedBy: req.user._id 
-      },
+      { hours, updatedBy: req.user._id },
       { new: true, upsert: true }
     );
 
@@ -69,7 +63,34 @@ const saveTimesheet = async (req, res) => {
   }
 };
 
-// GET /api/timesheets/team-members
+// NEW: Bulk Save
+const saveBulkTimesheets = async (req, res) => {
+  try {
+    const { userId, entries } = req.body; // entries = [{ date, hours }, ...]
+    const targetUserId = userId || req.user._id.toString();
+
+    if (!(await canAccessData(req.user, targetUserId))) {
+      return res.status(403).json({ message: 'Access Denied' });
+    }
+
+    const operations = entries.map(entry => ({
+      updateOne: {
+        filter: { user: targetUserId, date: new Date(entry.date) },
+        update: { $set: { hours: entry.hours, updatedBy: req.user._id } },
+        upsert: true
+      }
+    }));
+
+    if (operations.length > 0) {
+      await Timesheet.bulkWrite(operations);
+    }
+
+    res.json({ message: 'Saved successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 const getTeamMembers = async (req, res) => {
   try {
     if (req.user.role !== 'team_lead') return res.json([]);
@@ -81,4 +102,4 @@ const getTeamMembers = async (req, res) => {
   }
 };
 
-module.exports = { getTimesheets, saveTimesheet, getTeamMembers };
+module.exports = { getTimesheets, saveTimesheet, saveBulkTimesheets, getTeamMembers };
