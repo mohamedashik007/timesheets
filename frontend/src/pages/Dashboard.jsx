@@ -17,19 +17,28 @@ const Dashboard = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [viewingUserId, setViewingUserId] = useState('');
 
-  // --- HELPER: CHECK EDIT PERMISSION ---
+  // --- HELPER: CHECK EDIT PERMISSION (ROBUST STRING COMPARISON) ---
   const isMonthEditable = () => {
-    // Calculate the cutoff date (1st day of previous month)
-    const today = new Date();
-    const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const previousMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    
-    // Parse selected month
-    const [selYear, selMonth] = selectedMonth.split('-').map(Number);
-    const selectedDate = new Date(selYear, selMonth - 1, 1);
+    // 1. Get Current Date info
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1; // 1-12
 
-    // Allow if selected month is same or after previous month
-    return selectedDate >= previousMonth;
+    // 2. Format Current Month String "YYYY-MM"
+    const currentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+
+    // 3. Calculate Previous Month info
+    let prevYear = currentYear;
+    let prevMonth = currentMonth - 1;
+    if (prevMonth === 0) {
+      prevMonth = 12;
+      prevYear -= 1;
+    }
+    const prevMonthStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+
+    // 4. Compare Strings (ISO strings sort correctly)
+    // Allow if selected month is >= Previous Month String
+    return selectedMonth >= prevMonthStr;
   };
 
   // --- 1. INITIAL LOAD ---
@@ -201,7 +210,7 @@ const Dashboard = () => {
       cells.push(
         <div key={dateStr} className={`h-32 rounded-lg p-2 flex flex-col justify-between relative shadow-sm border transition-colors ${
           isModified ? 'bg-blue-50 border-blue-300' : 'bg-gray-100 border-gray-200 hover:border-gray-300'
-        } ${!isEditable ? 'opacity-75 bg-gray-200' : ''}`}>
+        } ${!isEditable ? 'opacity-75 bg-gray-200 cursor-not-allowed' : ''}`}>
           
           <div className="flex justify-between items-start">
             <div className="flex flex-col">
@@ -214,7 +223,7 @@ const Dashboard = () => {
           </div>
 
           <div className="flex flex-col items-center gap-2">
-            <div className="flex items-center justify-center bg-white rounded border border-gray-300 w-20">
+            <div className={`flex items-center justify-center bg-white rounded border w-20 ${!isEditable ? 'bg-gray-100 border-gray-300' : 'border-gray-300'}`}>
               <input 
                 type="number"
                 value={hours}
@@ -224,7 +233,7 @@ const Dashboard = () => {
                 min="0"
                 max="24"
                 disabled={!isEditable}
-                className="w-full h-10 text-center text-xl font-bold bg-transparent outline-none disabled:text-gray-400 disabled:cursor-not-allowed"
+                className="w-full h-10 text-center text-xl font-bold bg-transparent outline-none disabled:text-gray-500"
               />
             </div>
 
