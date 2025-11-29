@@ -18,11 +18,17 @@ const AdminDashboard = () => {
   const [editTeam, setEditTeam] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   
+  // NEW: Removal Confirmation
+  const [removeMemberConfirm, setRemoveMemberConfirm] = useState(null); // { team, memberId, memberName }
+
   const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCompany, setFilterCompany] = useState('');
   const [filterTeam, setFilterTeam] = useState('');
   const [expandedUser, setExpandedUser] = useState(null);
+
+  // NEW: Member Search
+  const [memberSearchTerm, setMemberSearchTerm] = useState('');
 
   const showNotify = (message, type = 'success') => {
     setNotification({ message, type });
@@ -150,8 +156,19 @@ const AdminDashboard = () => {
     setDeleteConfirm(null);
   };
 
-  const handleRemoveMemberFromTeam = async (team, memberId) => {
-    if (!window.confirm(`Remove this user from ${team.name}?`)) return;
+  // --- NEW REMOVE MEMBER LOGIC (No Alert) ---
+  const promptRemoveMember = (team, member) => {
+    setRemoveMemberConfirm({ 
+      team: team, 
+      memberId: member._id || member, 
+      memberName: member.displayName || 'Unknown' 
+    });
+  };
+
+  const confirmRemoveMember = async () => {
+    if (!removeMemberConfirm) return;
+    const { team, memberId } = removeMemberConfirm;
+
     const newMemberIds = team.members.filter(m => (m._id || m) !== memberId).map(m => m._id || m);
     const res = await fetch(`http://localhost:3000/api/teams/${team._id}`, {
       method: 'PUT',
@@ -169,6 +186,7 @@ const AdminDashboard = () => {
     } else {
       showNotify('Failed to remove member', 'error');
     }
+    setRemoveMemberConfirm(null);
   };
 
   const handleUpdateUser = async (e) => {
@@ -220,21 +238,26 @@ const AdminDashboard = () => {
     });
   };
 
-  // --- FILTER HELPERS (Updated to exclude admins) ---
+  // --- FILTER HELPERS ---
   const unassignedUsers = users.filter(u => 
     u.role !== 'admin' && (u.role === 'user' || u.role === 'team_lead') && !u.team
   );
 
   const availableUsersForEditTeam = (teamId) => users.filter(u => 
-    u.role !== 'admin' && // CRITICAL FIX: Explicitly exclude admins
+    u.role !== 'admin' &&
     (u.role === 'user' || u.role === 'team_lead') && 
     (!u.team || u.team._id === teamId)
   );
 
   const availableLeadsForEdit = (currentLeadId) => users.filter(u => 
-    u.role !== 'admin' && // CRITICAL FIX: Explicitly exclude admins
-    (!u.team || u._id === currentLeadId)
+    u.role !== 'admin' && (!u.team || u._id === currentLeadId)
   );
+
+  // Filter Helper for Search in Modals
+  const filterBySearch = (list) => {
+    if (!memberSearchTerm) return list;
+    return list.filter(u => u.displayName.toLowerCase().includes(memberSearchTerm.toLowerCase()));
+  };
 
   if (loading) return <div className="p-10 text-center">Loading...</div>;
 
@@ -248,6 +271,23 @@ const AdminDashboard = () => {
         </div>
       )}
 
+      {/* --- CONFIRM REMOVE MEMBER MODAL --- */}
+      {removeMemberConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-6 rounded shadow-lg w-full max-w-sm">
+            <h3 className="text-lg font-bold text-red-600 mb-2">Remove Member</h3>
+            <p className="text-gray-700 mb-6">
+              Remove <strong>{removeMemberConfirm.memberName}</strong> from <strong>{removeMemberConfirm.team.name}</strong>?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setRemoveMemberConfirm(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+              <button onClick={confirmRemoveMember} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- CONFIRM DELETE MODAL --- */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-6 rounded shadow-lg w-full max-w-sm">
@@ -283,18 +323,9 @@ const AdminDashboard = () => {
             <div className="bg-white p-6 rounded-lg shadow h-fit">
               <h3 className="text-lg font-bold mb-4">Add New User</h3>
               <form onSubmit={handleAddUser} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Email</label>
-                  <input type="email" required className="mt-1 w-full border border-gray-300 rounded p-2" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Display Name</label>
-                  <input type="text" required className="mt-1 w-full border border-gray-300 rounded p-2" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Company</label>
-                  <input type="text" className="mt-1 w-full border border-gray-300 rounded p-2" value={newUser.company} onChange={e => setNewUser({...newUser, company: e.target.value})} />
-                </div>
+                <div><label className="block text-sm font-medium text-gray-700">Email</label><input type="email" required className="mt-1 w-full border border-gray-300 rounded p-2" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} /></div>
+                <div><label className="block text-sm font-medium text-gray-700">Display Name</label><input type="text" required className="mt-1 w-full border border-gray-300 rounded p-2" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} /></div>
+                <div><label className="block text-sm font-medium text-gray-700">Company</label><input type="text" className="mt-1 w-full border border-gray-300 rounded p-2" value={newUser.company} onChange={e => setNewUser({...newUser, company: e.target.value})} /></div>
                 <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">Add User</button>
               </form>
             </div>
@@ -315,18 +346,13 @@ const AdminDashboard = () => {
                   <tbody className="divide-y divide-gray-200">
                     {users.map(u => (
                       <tr key={u._id}>
-                        <td className="px-3 py-2">
-                          <div className="text-sm font-medium text-gray-900">{u.displayName}</div>
-                          <div className="text-xs text-gray-500">{u.email}</div>
-                        </td>
+                        <td className="px-3 py-2"><div className="text-sm font-medium text-gray-900">{u.displayName}</div><div className="text-xs text-gray-500">{u.email}</div></td>
                         <td className="px-3 py-2 text-sm text-gray-600">{u.role}</td>
                         <td className="px-3 py-2 text-sm text-gray-600">{u.company || '-'}</td>
                         <td className="px-3 py-2 text-sm text-gray-600">{u.team?.name || '-'}</td>
                         <td className="px-3 py-2 text-right space-x-2">
                           <button onClick={() => setEditUser(u)} className="text-blue-600 hover:text-blue-900 text-sm">Edit</button>
-                          {u.role !== 'admin' && (
-                             <button onClick={() => promptDeleteUser(u)} className="text-red-600 hover:text-red-900 text-sm">Delete</button>
-                          )}
+                          {u.role !== 'admin' && <button onClick={() => promptDeleteUser(u)} className="text-red-600 hover:text-red-900 text-sm">Delete</button>}
                         </td>
                       </tr>
                     ))}
@@ -342,30 +368,31 @@ const AdminDashboard = () => {
             <div className="bg-white p-6 rounded-lg shadow h-fit">
               <h3 className="text-lg font-bold mb-4">Create Team</h3>
               <form onSubmit={handleCreateTeam} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Team Name</label>
-                  <input type="text" required className="mt-1 w-full border border-gray-300 rounded p-2" value={newTeam.name} onChange={e => setNewTeam({...newTeam, name: e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Assign Lead</label>
-                  <select className="mt-1 w-full border border-gray-300 rounded p-2" value={newTeam.leadId} onChange={e => setNewTeam({...newTeam, leadId: e.target.value})}>
-                    <option value="">Select a User</option>
-                    {unassignedUsers.map(u => (
-                      <option key={u._id} value={u._id}>{u.displayName}</option>
-                    ))}
-                  </select>
-                </div>
+                <div><label className="block text-sm font-medium text-gray-700">Team Name</label><input type="text" required className="mt-1 w-full border border-gray-300 rounded p-2" value={newTeam.name} onChange={e => setNewTeam({...newTeam, name: e.target.value})} /></div>
+                <div><label className="block text-sm font-medium text-gray-700">Assign Lead</label><select className="mt-1 w-full border border-gray-300 rounded p-2" value={newTeam.leadId} onChange={e => setNewTeam({...newTeam, leadId: e.target.value})}><option value="">Select a User</option>{unassignedUsers.map(u => <option key={u._id} value={u._id}>{u.displayName}</option>)}</select></div>
+                
+                {/* --- MEMBER ASSIGNMENT WITH SEARCH --- */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Assign Members</label>
+                  <input 
+                    type="text" 
+                    placeholder="Search users..." 
+                    className="w-full border border-gray-300 rounded px-2 py-1 mb-2 text-sm"
+                    onChange={(e) => setMemberSearchTerm(e.target.value)}
+                  />
                   <div className="h-40 overflow-y-auto border border-gray-300 rounded p-2 space-y-2">
-                    {unassignedUsers.filter(u => u._id !== newTeam.leadId).length > 0 ? (
-                      unassignedUsers.filter(u => u._id !== newTeam.leadId).map(u => (
-                        <div key={u._id} className="flex items-center">
-                          <input type="checkbox" id={`new-${u._id}`} checked={newTeam.memberIds.includes(u._id)} onChange={() => toggleNewTeamMember(u._id)} className="mr-2" />
-                          <label htmlFor={`new-${u._id}`} className="text-sm cursor-pointer">{u.displayName}</label>
+                    {filterBySearch(unassignedUsers.filter(u => u._id !== newTeam.leadId)).length > 0 ? (
+                      filterBySearch(unassignedUsers.filter(u => u._id !== newTeam.leadId)).map(u => (
+                        <div key={u._id} className="flex items-center p-1 hover:bg-gray-50 rounded">
+                          <input type="checkbox" id={`new-${u._id}`} checked={newTeam.memberIds.includes(u._id)} onChange={() => toggleNewTeamMember(u._id)} className="mr-3 h-4 w-4" />
+                          <label htmlFor={`new-${u._id}`} className="cursor-pointer">
+                            {/* Larger Font for Name */}
+                            <div className="text-base font-semibold text-gray-800">{u.displayName}</div>
+                            <div className="text-xs text-gray-500">{u.email}</div>
+                          </label>
                         </div>
                       ))
-                    ) : <p className="text-xs text-gray-400 italic">No available users found.</p>}
+                    ) : <p className="text-xs text-gray-400 italic">No users found.</p>}
                   </div>
                 </div>
                 <button type="submit" className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700">Create Team</button>
@@ -373,33 +400,38 @@ const AdminDashboard = () => {
             </div>
 
             <div className="md:col-span-2 bg-white p-6 rounded-lg shadow">
-              <h3 className="text-lg font-bold mb-4">All Teams</h3>
+              {/* --- IMPROVED TITLE DESIGN --- */}
+              <div className="flex items-center justify-between mb-6 pb-2 border-b border-gray-200">
+                <h3 className="text-xl font-bold text-gray-800">Active Teams</h3>
+                <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded-full">{teams.length} Teams</span>
+              </div>
+
               <div className="grid gap-4">
                 {teams.map(team => (
-                  <div key={team._id} className="border p-4 rounded bg-gray-50 flex flex-col md:flex-row justify-between items-start">
+                  <div key={team._id} className="border p-4 rounded bg-gray-50 flex flex-col md:flex-row justify-between items-start hover:shadow-sm transition-shadow">
                     <div className="flex-1 w-full">
                       <div className="flex justify-between items-center mb-2">
-                        <h4 className="font-bold text-lg text-gray-800">{team.name}</h4>
+                        <h4 className="font-bold text-lg text-gray-900">{team.name}</h4>
                         <div className="space-x-2">
-                          <button onClick={() => setEditTeam(team)} className="text-blue-600 text-xs hover:underline">Edit</button>
-                          <button onClick={() => promptDeleteTeam(team)} className="text-red-600 text-xs hover:underline">Delete Team</button>
+                          <button onClick={() => { setEditTeam(team); setMemberSearchTerm(''); }} className="text-blue-600 text-xs font-medium hover:underline bg-blue-50 px-2 py-1 rounded border border-blue-100">Edit</button>
+                          <button onClick={() => promptDeleteTeam(team)} className="text-red-600 text-xs font-medium hover:underline bg-red-50 px-2 py-1 rounded border border-red-100">Delete</button>
                         </div>
                       </div>
-                      <div className="text-sm text-gray-600 mb-2">
-                        <span className="font-semibold">Lead:</span> {team.lead?.displayName || 'Unassigned'}
+                      <div className="text-sm text-gray-600 mb-3 bg-white p-2 rounded border border-gray-100 inline-block">
+                        <span className="font-semibold text-gray-700">Lead:</span> {team.lead?.displayName || <span className="italic text-gray-400">Unassigned</span>}
                       </div>
                       <div className="text-sm text-gray-600">
-                        <span className="font-semibold block mb-1">Members: </span> 
+                        <span className="font-semibold block mb-2 text-gray-700">Members ({team.members?.length || 0}):</span> 
                         {team.members && team.members.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
                             {team.members.map(m => (
-                              <span key={m._id} className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                              <span key={m._id} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white border border-gray-200 text-gray-700 shadow-sm">
                                 {m.displayName}
-                                <button onClick={() => handleRemoveMemberFromTeam(team, m._id)} className="ml-1.5 text-blue-400 hover:text-blue-600 focus:outline-none" title="Remove">×</button>
+                                <button onClick={() => promptRemoveMember(team, m)} className="ml-2 text-gray-400 hover:text-red-500 text-lg leading-none" title="Remove">×</button>
                               </span>
                             ))}
                           </div>
-                        ) : <span className="text-gray-400 italic">No members assigned</span>}
+                        ) : <span className="text-gray-400 italic text-xs pl-2">No members assigned</span>}
                       </div>
                     </div>
                   </div>
@@ -409,35 +441,17 @@ const AdminDashboard = () => {
           </div>
         )}
 
+        {/* --- REPORTS TAB --- */}
         {activeTab === 'reports' && (
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex flex-col md:flex-row justify-between items-end mb-6 gap-4">
               <div className="flex flex-wrap gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Month</label>
-                  <input type="month" value={reportMonth} onChange={e => setReportMonth(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Search</label>
-                  <input type="text" placeholder="Name" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Company</label>
-                  <select value={filterCompany} onChange={e => setFilterCompany(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm min-w-[150px]">
-                    <option value="">All Companies</option>
-                    {uniqueCompanies.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Team</label>
-                  <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm min-w-[150px]">
-                    <option value="">All Teams</option>
-                    {uniqueTeams.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
+                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Month</label><input type="month" value={reportMonth} onChange={e => setReportMonth(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm" /></div>
+                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Search</label><input type="text" placeholder="Name" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm" /></div>
+                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Company</label><select value={filterCompany} onChange={e => setFilterCompany(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm min-w-[150px]"><option value="">All Companies</option>{uniqueCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Team</label><select value={filterTeam} onChange={e => setFilterTeam(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm min-w-[150px]"><option value="">All Teams</option>{uniqueTeams.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
               </div>
             </div>
-
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -458,28 +472,11 @@ const AdminDashboard = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stat.teamName}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-bold">{stat.totalHours}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button 
-                            onClick={() => setExpandedUser(expandedUser === stat._id ? null : stat._id)}
-                            className="text-blue-600 hover:text-blue-900"
-                          >
-                            {expandedUser === stat._id ? 'Hide' : 'View Days'}
-                          </button>
+                          <button onClick={() => setExpandedUser(expandedUser === stat._id ? null : stat._id)} className="text-blue-600 hover:text-blue-900">{expandedUser === stat._id ? 'Hide' : 'View Days'}</button>
                         </td>
                       </tr>
                       {expandedUser === stat._id && (
-                        <tr>
-                          <td colSpan="5" className="bg-gray-50 px-6 py-4">
-                            <div className="grid grid-cols-7 gap-2">
-                              {stat.entries.map((entry, idx) => (
-                                <div key={idx} className="bg-white p-2 rounded border border-gray-200 text-center">
-                                  <div className="text-xs text-gray-500">{entry.date.slice(8, 10)}</div>
-                                  <div className="text-sm font-bold text-blue-600">{entry.hours}</div>
-                                </div>
-                              ))}
-                              {stat.entries.length === 0 && <span className="text-gray-500 italic text-sm">No data recorded.</span>}
-                            </div>
-                          </td>
-                        </tr>
+                        <tr><td colSpan="5" className="bg-gray-50 px-6 py-4"><div className="grid grid-cols-7 gap-2">{stat.entries.map((entry, idx) => (<div key={idx} className="bg-white p-2 rounded border border-gray-200 text-center"><div className="text-xs text-gray-500">{entry.date.slice(8, 10)}</div><div className="text-sm font-bold text-blue-600">{entry.hours}</div></div>))}{stat.entries.length === 0 && <span className="text-gray-500 italic text-sm">No data recorded.</span>}</div></td></tr>
                       )}
                     </React.Fragment>
                   ))}
@@ -505,19 +502,32 @@ const AdminDashboard = () => {
         {editTeam && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40">
             <div className="bg-white p-6 rounded shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
-              <h3 className="text-xl font-bold mb-4">Edit Team</h3>
-              <form onSubmit={handleUpdateTeam} className="space-y-4">
-                <div><label className="block text-sm text-gray-700">Team Name</label><input type="text" className="w-full border p-2 rounded" value={editTeam.name} onChange={e => setEditTeam({...editTeam, name: e.target.value})} /></div>
-                <div><label className="block text-sm text-gray-700">Lead</label><select className="w-full border p-2 rounded" value={editTeam.lead?._id || editTeam.lead || ''} onChange={e => setEditTeam({...editTeam, lead: e.target.value})}><option value="">No Lead</option>{availableLeadsForEdit(editTeam.lead?._id || editTeam.lead).map(u => <option key={u._id} value={u._id}>{u.displayName}</option>)}</select></div>
+              <h3 className="text-xl font-bold mb-4 border-b pb-2">Edit Team: {editTeam.name}</h3>
+              <form onSubmit={handleUpdateTeam} className="space-y-4 pt-2">
+                <div><label className="block text-sm font-medium text-gray-700">Team Name</label><input type="text" className="w-full border p-2 rounded" value={editTeam.name} onChange={e => setEditTeam({...editTeam, name: e.target.value})} /></div>
+                <div><label className="block text-sm font-medium text-gray-700">Lead</label><select className="w-full border p-2 rounded" value={editTeam.lead?._id || editTeam.lead || ''} onChange={e => setEditTeam({...editTeam, lead: e.target.value})}><option value="">No Lead</option>{availableLeadsForEdit(editTeam.lead?._id || editTeam.lead).map(u => <option key={u._id} value={u._id}>{u.displayName}</option>)}</select></div>
+                
+                {/* --- EDIT MEMBER ASSIGNMENT WITH SEARCH --- */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Team Members</label>
+                  <input type="text" placeholder="Search members..." className="w-full border border-gray-300 rounded px-2 py-1 mb-2 text-sm" onChange={(e) => setMemberSearchTerm(e.target.value)} />
                   <div className="h-48 overflow-y-auto border border-gray-300 rounded p-2 space-y-2">
-                    {availableUsersForEditTeam(editTeam._id).map(u => {
-                      const isMember = editTeam.members.some(m => (m._id || m) === u._id);
-                      return (
-                        <div key={u._id} className="flex items-center"><input type="checkbox" checked={isMember} onChange={() => toggleEditTeamMember(u._id)} className="mr-2" /><label className="text-sm cursor-pointer">{u.displayName}</label></div>
-                      );
-                    })}
+                    {filterBySearch(availableUsersForEditTeam(editTeam._id)).length > 0 ? (
+                      filterBySearch(availableUsersForEditTeam(editTeam._id))
+                        .filter(u => u._id !== (editTeam.lead?._id || editTeam.lead))
+                        .map(u => {
+                          const isMember = editTeam.members.some(m => (m._id || m) === u._id);
+                          return (
+                            <div key={u._id} className="flex items-center p-1 hover:bg-gray-50 rounded">
+                              <input type="checkbox" id={`edit-${u._id}`} checked={isMember} onChange={() => toggleEditTeamMember(u._id)} className="mr-3 h-4 w-4" />
+                              <label htmlFor={`edit-${u._id}`} className="cursor-pointer">
+                                <div className="text-base font-semibold text-gray-800">{u.displayName}</div>
+                                <div className="text-xs text-gray-500">{u.team && u.team._id !== editTeam._id && !isMember ? `(Moves from ${u.team.name})` : u.email}</div>
+                              </label>
+                            </div>
+                          );
+                        })
+                    ) : <p className="text-xs text-gray-400 italic">No users found.</p>}
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 mt-4"><button type="button" onClick={() => setEditTeam(null)} className="px-4 py-2 text-gray-600">Cancel</button><button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Save Changes</button></div>
