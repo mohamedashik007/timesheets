@@ -1,44 +1,48 @@
 const Timesheet = require('../models/Timesheet');
+const User = require('../models/User');
 const Team = require('../models/Team');
 
+// Helper: Check Permissions
 const canAccessData = async (requester, targetUserId) => {
+  if (!requester) return false;
   if (requester._id.toString() === targetUserId) return true;
   if (requester.role === 'admin') return true;
   
   if (requester.role === 'team_lead') {
     const team = await Team.findOne({ lead: requester._id });
-    if (team && team.members.includes(targetUserId)) {
+    if (team && team.members.some(m => m.toString() === targetUserId)) {
       return true;
     }
   }
   return false;
 };
 
-// GET /api/timesheets?userId=...&month=2023-11
+// GET /api/timesheets
 const getTimesheets = async (req, res) => {
   try {
     const targetUserId = req.query.userId || req.user._id.toString();
-    const monthStr = req.query.month; // "YYYY-MM"
+    const monthStr = req.query.month;
 
     if (!(await canAccessData(req.user, targetUserId))) {
       return res.status(403).json({ message: 'Access Denied' });
     }
 
-    let sheet = await Timesheet.findOne({ user: targetUserId, month: monthStr });
+    const sheet = await Timesheet.findOne({
+      user: targetUserId,
+      month: monthStr
+    });
 
-    if (!sheet) {
-      // Return empty structure if not found, don't create yet
-      return res.json({ month: monthStr, entries: [], totalHours: 0 });
-    }
+    // Return empty entry list if no sheet exists yet
+    if (!sheet) return res.json({ entries: [] }); 
 
     res.json(sheet);
   } catch (err) {
+    console.error("Get Timesheet Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
 
 // POST /api/timesheets/bulk
-// Accepts: { userId, month: "2023-11", entries: [{ date: "...", hours: 8 }, ...] }
 const saveBulkTimesheets = async (req, res) => {
   try {
     const { userId, month, entries } = req.body;
@@ -48,25 +52,28 @@ const saveBulkTimesheets = async (req, res) => {
       return res.status(403).json({ message: 'Access Denied' });
     }
 
-    // Calculate Total Hours
     const totalHours = entries.reduce((sum, e) => sum + (parseFloat(e.hours) || 0), 0);
 
     const sheet = await Timesheet.findOneAndUpdate(
-      { user: targetUserId, month },
+      { user: targetUserId, month: month },
       { 
-        entries, 
-        totalHours,
-        updatedBy: req.user._id 
+        $set: {
+            entries: entries,
+            totalHours: totalHours,
+            updatedBy: req.user._id
+        }
       },
       { new: true, upsert: true }
     );
 
-    res.json(sheet);
+    res.json({ message: 'Saved successfully', sheet });
   } catch (err) {
+    console.error("Bulk Save Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
 
+// GET Team Members
 const getTeamMembers = async (req, res) => {
   try {
     if (req.user.role !== 'team_lead') return res.json([]);
@@ -78,4 +85,5 @@ const getTeamMembers = async (req, res) => {
   }
 };
 
+// Correctly export all functions
 module.exports = { getTimesheets, saveBulkTimesheets, getTeamMembers };

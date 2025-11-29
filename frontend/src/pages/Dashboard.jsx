@@ -6,42 +6,37 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // Data State
   const [entries, setEntries] = useState({});
   const [modifiedDates, setModifiedDates] = useState(new Set());
   const [teamMembers, setTeamMembers] = useState([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
-  // UI State
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [viewingUserId, setViewingUserId] = useState('');
 
-  // --- HELPER: CHECK EDIT PERMISSION (ROBUST STRING COMPARISON) ---
+  // --- LOGIC: ALLOW CURRENT & PREVIOUS MONTH ---
   const isMonthEditable = () => {
-    // 1. Get Current Date info
+    // We compare strings "YYYY-MM" to avoid timezone headaches
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1; // 1-12
 
-    // 2. Format Current Month String "YYYY-MM"
-    const currentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-
-    // 3. Calculate Previous Month info
+    // 1. Calculate Previous Month
     let prevYear = currentYear;
     let prevMonth = currentMonth - 1;
     if (prevMonth === 0) {
       prevMonth = 12;
       prevYear -= 1;
     }
+    
+    // 2. Create String "YYYY-MM" (e.g., "2023-10")
     const prevMonthStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
-
-    // 4. Compare Strings (ISO strings sort correctly)
-    // Allow if selected month is >= Previous Month String
+    
+    // 3. Allow if Selected Month >= Previous Month
     return selectedMonth >= prevMonthStr;
   };
 
-  // --- 1. INITIAL LOAD ---
   useEffect(() => {
     const init = async () => {
       try {
@@ -69,7 +64,6 @@ const Dashboard = () => {
     init();
   }, [navigate]);
 
-  // --- 2. FETCH DATA ---
   const fetchTimesheets = useCallback(async () => {
     const targetId = viewingUserId || user?._id;
     if (!targetId) return;
@@ -83,13 +77,16 @@ const Dashboard = () => {
         const dbData = await res.json();
         const entryMap = {};
         
-        if (dbData.entries) {
+        // Handle "Monthly Document" Structure
+        if (dbData.entries && Array.isArray(dbData.entries)) {
           dbData.entries.forEach(item => {
-            const dateKey = item.date.slice(0, 10);
+            // item.date is stored as string "YYYY-MM-DD"
+            const dateKey = typeof item.date === 'string' ? item.date.slice(0, 10) : new Date(item.date).toISOString().slice(0, 10);
             entryMap[dateKey] = item.hours;
           });
         }
 
+        // Apply Defaults (8 hours weekdays)
         const [year, month] = selectedMonth.split('-').map(Number);
         const daysInMonth = new Date(year, month, 0).getDate();
 
@@ -116,7 +113,6 @@ const Dashboard = () => {
     fetchTimesheets();
   }, [fetchTimesheets]);
 
-  // --- 3. LOCAL UPDATES ---
   const updateLocalEntry = (dateStr, val) => {
     if (!isMonthEditable()) return;
 
@@ -147,7 +143,6 @@ const Dashboard = () => {
     updateLocalEntry(dateStr, val - 0.5);
   };
 
-  // --- 4. SAVE ---
   const handleSave = async () => {
     if (!isMonthEditable()) return;
     setIsSaving(true);
@@ -164,7 +159,7 @@ const Dashboard = () => {
         credentials: 'include',
         body: JSON.stringify({
           userId: viewingUserId || user._id,
-          month: selectedMonth,
+          month: selectedMonth, 
           entries: updates
         })
       });
@@ -172,6 +167,8 @@ const Dashboard = () => {
       if (res.ok) {
         setModifiedDates(new Set());
         setHasUnsavedChanges(false);
+        // Refresh to ensure sync
+        fetchTimesheets(); 
       } else {
         alert('Failed to save changes');
       }
@@ -187,7 +184,6 @@ const Dashboard = () => {
     window.location.href = "http://localhost:3000/auth/logout";
   };
 
-  // --- RENDER HELPERS ---
   const renderCalendar = () => {
     const [year, month] = selectedMonth.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();

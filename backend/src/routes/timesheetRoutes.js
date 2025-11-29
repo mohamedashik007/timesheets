@@ -5,9 +5,9 @@ const { ensureAuth } = require('../middleware/authMiddleware');
 
 router.use(ensureAuth);
 
+// Ensure these match the 'exports.X' names in the controller
 router.get('/', timesheetController.getTimesheets);
-//router.post('/', timesheetController.saveTimesheet);
-router.post('/bulk', timesheetController.saveBulkTimesheets); // New Endpoint
+router.post('/bulk', timesheetController.saveBulkTimesheets); 
 router.get('/members', timesheetController.getTeamMembers);
 
 module.exports = router;
