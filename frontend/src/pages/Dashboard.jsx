@@ -47,8 +47,9 @@ const Dashboard = () => {
 
   // --- 2. FETCH & PREPARE DATA ---
   const fetchTimesheets = useCallback(async () => {
-    if (!user) return;
-    const targetId = viewingUserId || user._id;
+    // Safety check: Don't fetch if we don't know who the user is yet
+    const targetId = viewingUserId || user?._id;
+    if (!targetId) return;
     
     try {
       const res = await fetch(`http://localhost:3000/api/timesheets?month=${selectedMonth}&userId=${targetId}`, { 
@@ -60,10 +61,12 @@ const Dashboard = () => {
         const entryMap = {};
         
         // 1. Populate from DB
-        dbData.forEach(item => {
-          const dateKey = item.date.slice(0, 10);
-          entryMap[dateKey] = item.hours;
-        });
+        if (dbData.entries) {
+          dbData.entries.forEach(item => {
+            const dateKey = item.date.slice(0, 10);
+            entryMap[dateKey] = item.hours;
+          });
+        }
 
         // 2. Apply Defaults (8 hours for weekdays if empty)
         const [year, month] = selectedMonth.split('-').map(Number);
@@ -74,9 +77,9 @@ const Dashboard = () => {
           const dayOfWeek = new Date(dateStr).getDay();
           const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-          // If no data from DB and it's a weekday, set default 8
-          if (entryMap[dateStr] === undefined && !isWeekend) {
-            entryMap[dateStr] = 8;
+          // If no data from DB, set default
+          if (entryMap[dateStr] === undefined) {
+            entryMap[dateStr] = isWeekend ? 0 : 8;
           }
         }
 
@@ -95,36 +98,42 @@ const Dashboard = () => {
 
   // --- 3. LOCAL UPDATES ---
   
-  const updateLocalEntry = (dateStr, newHours) => {
-    // Validate range 0-24
-    let val = parseFloat(newHours);
-    if (isNaN(val)) val = 0;
-    if (val < 0) val = 0;
-    if (val > 24) val = 24;
+  const updateLocalEntry = (dateStr, val) => {
+    // Handle empty input string vs numbers
+    if (val === '') {
+      setEntries(prev => ({ ...prev, [dateStr]: '' }));
+      return; 
+    }
 
-    setEntries(prev => ({ ...prev, [dateStr]: val }));
+    let numVal = parseFloat(val);
+    if (isNaN(numVal)) numVal = 0;
+    if (numVal < 0) numVal = 0;
+    if (numVal > 24) numVal = 24;
+
+    setEntries(prev => ({ ...prev, [dateStr]: numVal }));
     setModifiedDates(prev => new Set(prev).add(dateStr));
     setHasUnsavedChanges(true);
   };
 
   const handleIncrement = (dateStr, currentVal) => {
-    updateLocalEntry(dateStr, (parseFloat(currentVal || 0) + 0.5));
+    const val = currentVal === '' ? 0 : parseFloat(currentVal);
+    updateLocalEntry(dateStr, val + 0.5);
   };
 
   const handleDecrement = (dateStr, currentVal) => {
-    updateLocalEntry(dateStr, (parseFloat(currentVal || 0) - 0.5));
+    const val = currentVal === '' ? 0 : parseFloat(currentVal);
+    updateLocalEntry(dateStr, val - 0.5);
   };
 
   // --- 4. BULK SAVE ---
   const handleSave = async () => {
-    if (modifiedDates.size === 0) return;
     setIsSaving(true);
 
     try {
-      // Convert map to array for the API
-      const updates = Array.from(modifiedDates).map(date => ({
+      // Send ALL entries to server to ensure defaults are saved
+      const updates = Object.keys(entries).map(date => ({
         date,
-        hours: entries[date]
+        hours: entries[date] === '' ? 0 : entries[date]
       }));
 
       const res = await fetch('http://localhost:3000/api/timesheets/bulk', {
@@ -132,7 +141,8 @@ const Dashboard = () => {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          userId: viewingUserId,
+          userId: viewingUserId || user._id,
+          month: selectedMonth,
           entries: updates
         })
       });
@@ -140,7 +150,6 @@ const Dashboard = () => {
       if (res.ok) {
         setModifiedDates(new Set());
         setHasUnsavedChanges(false);
-        // Optional: Re-fetch to ensure sync, but local state is arguably freshest
       } else {
         alert('Failed to save changes');
       }
@@ -172,14 +181,16 @@ const Dashboard = () => {
     // Day Cells
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const hours = entries[dateStr] ?? 0; // Use nullish coalescing
+      const hours = entries[dateStr] ?? 0;
       const isModified = modifiedDates.has(dateStr);
 
       cells.push(
-        <div key={dateStr} className={`h-32 rounded-lg p-2 flex flex-col justify-between relative shadow-sm border ${isModified ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-100 border-gray-200'}`}>
+        <div key={dateStr} className={`h-32 rounded-lg p-2 flex flex-col justify-between relative shadow-sm border transition-colors ${
+          isModified ? 'bg-blue-50 border-blue-300' : 'bg-gray-100 border-gray-200 hover:border-gray-300'
+        }`}>
           {/* Header */}
           <div className="flex justify-between items-start">
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-blue-500 font-bold h-4">
               {isModified && '●'}
             </div>
             <div className="text-lg font-bold text-gray-700">{d}</div>
@@ -188,7 +199,7 @@ const Dashboard = () => {
           {/* Controls */}
           <div className="flex flex-col items-center gap-2">
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center bg-white rounded border border-gray-300 w-20">
                {/* Input Field */}
               <input 
                 type="number"
@@ -198,21 +209,21 @@ const Dashboard = () => {
                 step="0.5"
                 min="0"
                 max="24"
-                className="w-16 h-10 text-center text-xl font-bold rounded border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full h-10 text-center text-xl font-bold bg-transparent outline-none"
               />
             </div>
 
             <div className="flex gap-2 w-full justify-center">
               <button 
                 onClick={() => handleDecrement(dateStr, hours)}
-                className="w-8 h-8 flex items-center justify-center bg-green-300 hover:bg-green-400 rounded text-xl font-bold pb-1 transition-colors"
+                className="w-8 h-8 flex items-center justify-center bg-red-200 hover:bg-red-300 text-red-800 rounded font-bold transition-colors"
                 tabIndex="-1"
               >
                 -
               </button>
               <button 
                 onClick={() => handleIncrement(dateStr, hours)}
-                className="w-8 h-8 flex items-center justify-center bg-red-300 hover:bg-red-400 rounded text-xl font-bold pb-1 transition-colors"
+                className="w-8 h-8 flex items-center justify-center bg-green-200 hover:bg-green-300 text-green-800 rounded font-bold transition-colors"
                 tabIndex="-1"
               >
                 +
@@ -228,6 +239,9 @@ const Dashboard = () => {
   const totalHours = Object.values(entries).reduce((sum, h) => sum + (parseFloat(h) || 0), 0);
 
   if (loading) return <div className="p-10 text-center">Loading...</div>;
+  
+  // FIX: Prevent rendering if user is missing (stops the crash)
+  if (!user) return null;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
@@ -237,12 +251,11 @@ const Dashboard = () => {
             <h1 className="text-xl font-bold text-gray-800">Timesheets</h1>
           </div>
           <div className="flex items-center gap-4">
-            {/* Added optional chaining here to fix crash */}
             <div className="flex items-center gap-2">
-              {user?.image && <img src={user.image} alt="" className="h-8 w-8 rounded-full bg-gray-200" />}
+              {user.image && <img src={user.image} alt="" className="h-8 w-8 rounded-full bg-gray-200" />}
               <div className="text-sm hidden sm:block">
-                <p className="font-medium text-gray-700">{user?.displayName}</p>
-                <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
+                <p className="font-medium text-gray-700">{user.displayName}</p>
+                <p className="text-xs text-gray-500 capitalize">{user.role}</p>
               </div>
             </div>
             <button onClick={handleLogout} className="text-sm text-red-600 hover:text-red-800 font-medium">Logout</button>
@@ -265,7 +278,7 @@ const Dashboard = () => {
               />
             </div>
 
-            {user?.role === 'team_lead' && (
+            {user.role === 'team_lead' && (
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Viewing</label>
                 <select 
@@ -290,14 +303,14 @@ const Dashboard = () => {
             
             <button 
               onClick={handleSave}
-              disabled={!hasUnsavedChanges || isSaving}
+              disabled={isSaving}
               className={`px-6 py-2 rounded font-bold text-white shadow-sm transition-all ${
                 hasUnsavedChanges 
                   ? 'bg-blue-600 hover:bg-blue-700 hover:shadow-md' 
-                  : 'bg-gray-300 cursor-not-allowed'
+                  : 'bg-gray-400 hover:bg-gray-500'
               }`}
             >
-              {isSaving ? 'Saving...' : 'Save Changes'}
+              {isSaving ? 'Saving...' : (hasUnsavedChanges ? 'Save Changes' : 'Save')}
             </button>
           </div>
         </div>

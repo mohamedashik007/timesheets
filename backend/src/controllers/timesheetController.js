@@ -1,8 +1,6 @@
 const Timesheet = require('../models/Timesheet');
-const User = require('../models/User');
 const Team = require('../models/Team');
 
-// ... (Keep existing helper 'canAccessData' and 'getTimesheets') ...
 const canAccessData = async (requester, targetUserId) => {
   if (requester._id.toString() === targetUserId) return true;
   if (requester.role === 'admin') return true;
@@ -16,76 +14,54 @@ const canAccessData = async (requester, targetUserId) => {
   return false;
 };
 
+// GET /api/timesheets?userId=...&month=2023-11
 const getTimesheets = async (req, res) => {
   try {
     const targetUserId = req.query.userId || req.user._id.toString();
-    const monthStr = req.query.month;
+    const monthStr = req.query.month; // "YYYY-MM"
 
     if (!(await canAccessData(req.user, targetUserId))) {
       return res.status(403).json({ message: 'Access Denied' });
     }
 
-    const start = new Date(`${monthStr}-01`);
-    const end = new Date(new Date(start).setMonth(start.getMonth() + 1));
+    let sheet = await Timesheet.findOne({ user: targetUserId, month: monthStr });
 
-    const entries = await Timesheet.find({
-      user: targetUserId,
-      date: { $gte: start, $lt: end }
-    });
+    if (!sheet) {
+      // Return empty structure if not found, don't create yet
+      return res.json({ month: monthStr, entries: [], totalHours: 0 });
+    }
 
-    res.json(entries);
+    res.json(sheet);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-// ... (Keep 'saveTimesheet' for single edits if needed, but we focus on bulk) ...
-const saveTimesheet = async (req, res) => {
-    // ... existing single save logic ...
-    try {
-    const { userId, date, hours } = req.body;
+// POST /api/timesheets/bulk
+// Accepts: { userId, month: "2023-11", entries: [{ date: "...", hours: 8 }, ...] }
+const saveBulkTimesheets = async (req, res) => {
+  try {
+    const { userId, month, entries } = req.body;
     const targetUserId = userId || req.user._id.toString();
 
     if (!(await canAccessData(req.user, targetUserId))) {
       return res.status(403).json({ message: 'Access Denied' });
     }
 
-    const entryDate = new Date(date);
-    const entry = await Timesheet.findOneAndUpdate(
-      { user: targetUserId, date: entryDate },
-      { hours, updatedBy: req.user._id },
+    // Calculate Total Hours
+    const totalHours = entries.reduce((sum, e) => sum + (parseFloat(e.hours) || 0), 0);
+
+    const sheet = await Timesheet.findOneAndUpdate(
+      { user: targetUserId, month },
+      { 
+        entries, 
+        totalHours,
+        updatedBy: req.user._id 
+      },
       { new: true, upsert: true }
     );
 
-    res.json(entry);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// NEW: Bulk Save
-const saveBulkTimesheets = async (req, res) => {
-  try {
-    const { userId, entries } = req.body; // entries = [{ date, hours }, ...]
-    const targetUserId = userId || req.user._id.toString();
-
-    if (!(await canAccessData(req.user, targetUserId))) {
-      return res.status(403).json({ message: 'Access Denied' });
-    }
-
-    const operations = entries.map(entry => ({
-      updateOne: {
-        filter: { user: targetUserId, date: new Date(entry.date) },
-        update: { $set: { hours: entry.hours, updatedBy: req.user._id } },
-        upsert: true
-      }
-    }));
-
-    if (operations.length > 0) {
-      await Timesheet.bulkWrite(operations);
-    }
-
-    res.json({ message: 'Saved successfully' });
+    res.json(sheet);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -102,4 +78,4 @@ const getTeamMembers = async (req, res) => {
   }
 };
 
-module.exports = { getTimesheets, saveTimesheet, saveBulkTimesheets, getTeamMembers };
+module.exports = { getTimesheets, saveBulkTimesheets, getTeamMembers };

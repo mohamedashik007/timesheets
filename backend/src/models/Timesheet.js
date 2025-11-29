@@ -6,15 +6,18 @@ const TimesheetSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  date: {
-    type: Date,
+  month: {
+    type: String, // Format: "YYYY-MM"
     required: true
   },
-  hours: {
+  // We store daily hours in an object map for easy access: { "01": 8, "02": 0, ... }
+  // OR an array of objects. Let's use an array for flexibility.
+  entries: [{
+    date: { type: Date, required: true },
+    hours: { type: Number, default: 0, min: 0, max: 24 }
+  }],
+  totalHours: {
     type: Number,
-    required: true,
-    min: 0,
-    max: 24,
     default: 0
   },
   updatedBy: {
@@ -23,7 +26,7 @@ const TimesheetSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// Compound index: A user can only have ONE entry per date
-TimesheetSchema.index({ user: 1, date: 1 }, { unique: true });
+// Ensure unique month per user
+TimesheetSchema.index({ user: 1, month: 1 }, { unique: true });
 
 module.exports = mongoose.model('Timesheet', TimesheetSchema);
