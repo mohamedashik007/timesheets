@@ -10,6 +10,7 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const teamRoutes = require('./routes/teamRoutes');
+const timesheetRoutes = require('./routes/timesheetRoutes');
 
 // Passport Config
 require('./config/passport')(passport);
@@ -56,6 +57,7 @@ app.use('/auth', authRoutes);      // Handles /auth/google, /auth/logout
 app.use('/api', authRoutes);       // Handles /api/current_user (reusing auth routes for simplicity)
 app.use('/api/users', userRoutes); // Handles /api/users CRUD
 app.use('/api/teams', teamRoutes); // Handles /api/teams CRUD
+app.use('/api/timesheets', timesheetRoutes); // ADD THIS LINE
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
