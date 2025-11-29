@@ -17,17 +17,13 @@ const AdminDashboard = () => {
   const [editUser, setEditUser] = useState(null);
   const [editTeam, setEditTeam] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-  
-  // NEW: Removal Confirmation
-  const [removeMemberConfirm, setRemoveMemberConfirm] = useState(null); // { team, memberId, memberName }
+  const [removeMemberConfirm, setRemoveMemberConfirm] = useState(null);
 
   const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCompany, setFilterCompany] = useState('');
   const [filterTeam, setFilterTeam] = useState('');
   const [expandedUser, setExpandedUser] = useState(null);
-
-  // NEW: Member Search
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
 
   const showNotify = (message, type = 'success') => {
@@ -93,6 +89,7 @@ const AdminDashboard = () => {
   const uniqueCompanies = [...new Set(stats.map(s => s.company).filter(c => c !== 'N/A'))];
   const uniqueTeams = [...new Set(stats.map(s => s.teamName).filter(t => t !== 'Unassigned'))];
 
+  // --- ACTIONS ---
   const handleAddUser = async (e) => {
     e.preventDefault();
     const payload = { ...newUser, role: 'user' };
@@ -156,29 +153,19 @@ const AdminDashboard = () => {
     setDeleteConfirm(null);
   };
 
-  // --- NEW REMOVE MEMBER LOGIC (No Alert) ---
   const promptRemoveMember = (team, member) => {
-    setRemoveMemberConfirm({ 
-      team: team, 
-      memberId: member._id || member, 
-      memberName: member.displayName || 'Unknown' 
-    });
+    setRemoveMemberConfirm({ team: team, memberId: member._id || member, memberName: member.displayName || 'Unknown' });
   };
 
   const confirmRemoveMember = async () => {
     if (!removeMemberConfirm) return;
     const { team, memberId } = removeMemberConfirm;
-
     const newMemberIds = team.members.filter(m => (m._id || m) !== memberId).map(m => m._id || m);
     const res = await fetch(`http://localhost:3000/api/teams/${team._id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({
-        name: team.name,
-        leadId: team.lead?._id || team.lead,
-        memberIds: newMemberIds
-      })
+      body: JSON.stringify({ name: team.name, leadId: team.lead?._id || team.lead, memberIds: newMemberIds })
     });
     if (res.ok) {
       showNotify('Member removed');
@@ -238,22 +225,11 @@ const AdminDashboard = () => {
     });
   };
 
-  // --- FILTER HELPERS ---
-  const unassignedUsers = users.filter(u => 
-    u.role !== 'admin' && (u.role === 'user' || u.role === 'team_lead') && !u.team
-  );
-
-  const availableUsersForEditTeam = (teamId) => users.filter(u => 
-    u.role !== 'admin' &&
-    (u.role === 'user' || u.role === 'team_lead') && 
-    (!u.team || u.team._id === teamId)
-  );
-
-  const availableLeadsForEdit = (currentLeadId) => users.filter(u => 
-    u.role !== 'admin' && (!u.team || u._id === currentLeadId)
-  );
-
-  // Filter Helper for Search in Modals
+  // --- FILTERS ---
+  const unassignedUsers = users.filter(u => u.role !== 'admin' && (u.role === 'user' || u.role === 'team_lead') && !u.team);
+  const availableUsersForEditTeam = (teamId) => users.filter(u => u.role !== 'admin' && (u.role === 'user' || u.role === 'team_lead') && (!u.team || u.team._id === teamId));
+  const availableLeadsForEdit = (currentLeadId) => users.filter(u => u.role !== 'admin' && (!u.team || u._id === currentLeadId));
+  
   const filterBySearch = (list) => {
     if (!memberSearchTerm) return list;
     return list.filter(u => u.displayName.toLowerCase().includes(memberSearchTerm.toLowerCase()));
@@ -262,7 +238,8 @@ const AdminDashboard = () => {
   if (loading) return <div className="p-10 text-center">Loading...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50 relative">
+    <div className="min-h-screen bg-gray-50 relative pb-10">
+      {/* NOTIFICATION */}
       {notification && (
         <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded shadow-lg text-white ${
           notification.type === 'error' ? 'bg-red-500' : 'bg-green-500'
@@ -271,23 +248,7 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* --- CONFIRM REMOVE MEMBER MODAL --- */}
-      {removeMemberConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white p-6 rounded shadow-lg w-full max-w-sm">
-            <h3 className="text-lg font-bold text-red-600 mb-2">Remove Member</h3>
-            <p className="text-gray-700 mb-6">
-              Remove <strong>{removeMemberConfirm.memberName}</strong> from <strong>{removeMemberConfirm.team.name}</strong>?
-            </p>
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setRemoveMemberConfirm(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-              <button onClick={confirmRemoveMember} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Remove</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- CONFIRM DELETE MODAL --- */}
+      {/* DELETE CONFIRM MODAL */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-6 rounded shadow-lg w-full max-w-sm">
@@ -301,25 +262,42 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      <nav className="bg-gray-800 text-white shadow-lg">
+      {/* REMOVE MEMBER MODAL */}
+      {removeMemberConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-6 rounded shadow-lg w-full max-w-sm">
+            <h3 className="text-lg font-bold text-red-600 mb-2">Remove Member</h3>
+            <p className="text-gray-700 mb-6">Remove <strong>{removeMemberConfirm.memberName}</strong> from <strong>{removeMemberConfirm.team.name}</strong>?</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setRemoveMemberConfirm(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+              <button onClick={confirmRemoveMember} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NAVBAR */}
+      <nav className="bg-gray-800 text-white shadow-lg sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <span className="font-bold text-xl">Admin Console</span>
+          <span className="font-bold text-xl truncate">Admin Console</span>
           <div className="flex items-center gap-4">
-             <span className="text-gray-300 text-sm">{currentUser.email}</span>
-             <a href="http://localhost:3000/auth/logout" className="text-red-400 hover:text-white text-sm">Logout</a>
+             <span className="text-gray-300 text-sm hidden sm:inline">{currentUser.email}</span>
+             <a href="http://localhost:3000/auth/logout" className="text-red-400 hover:text-white text-sm whitespace-nowrap">Logout</a>
           </div>
         </div>
       </nav>
 
       <main className="max-w-7xl mx-auto py-8 px-4">
-        <div className="flex space-x-4 mb-8 border-b border-gray-200 pb-2">
+        {/* TABS - Horizontal Scroll for Mobile */}
+        <div className="flex space-x-4 mb-8 border-b border-gray-200 pb-2 overflow-x-auto whitespace-nowrap scrollbar-hide">
           <button onClick={() => setActiveTab('users')} className={`pb-2 px-4 ${activeTab === 'users' ? 'border-b-2 border-blue-500 text-blue-600 font-bold' : 'text-gray-500'}`}>Manage Users</button>
           <button onClick={() => setActiveTab('teams')} className={`pb-2 px-4 ${activeTab === 'teams' ? 'border-b-2 border-blue-500 text-blue-600 font-bold' : 'text-gray-500'}`}>Manage Teams</button>
           <button onClick={() => setActiveTab('reports')} className={`pb-2 px-4 ${activeTab === 'reports' ? 'border-b-2 border-blue-500 text-blue-600 font-bold' : 'text-gray-500'}`}>Reports</button>
         </div>
 
+        {/* --- USERS TAB --- */}
         {activeTab === 'users' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="bg-white p-6 rounded-lg shadow h-fit">
               <h3 className="text-lg font-bold mb-4">Add New User</h3>
               <form onSubmit={handleAddUser} className="space-y-4">
@@ -330,15 +308,15 @@ const AdminDashboard = () => {
               </form>
             </div>
 
-            <div className="md:col-span-2 bg-white p-6 rounded-lg shadow">
+            <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow overflow-hidden">
               <h3 className="text-lg font-bold mb-4">All Users</h3>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Role</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Company</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Team</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
@@ -347,10 +325,10 @@ const AdminDashboard = () => {
                     {users.map(u => (
                       <tr key={u._id}>
                         <td className="px-3 py-2"><div className="text-sm font-medium text-gray-900">{u.displayName}</div><div className="text-xs text-gray-500">{u.email}</div></td>
-                        <td className="px-3 py-2 text-sm text-gray-600">{u.role}</td>
-                        <td className="px-3 py-2 text-sm text-gray-600">{u.company || '-'}</td>
+                        <td className="px-3 py-2 text-sm text-gray-600 hidden sm:table-cell">{u.role}</td>
+                        <td className="px-3 py-2 text-sm text-gray-600 hidden md:table-cell">{u.company || '-'}</td>
                         <td className="px-3 py-2 text-sm text-gray-600">{u.team?.name || '-'}</td>
-                        <td className="px-3 py-2 text-right space-x-2">
+                        <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
                           <button onClick={() => setEditUser(u)} className="text-blue-600 hover:text-blue-900 text-sm">Edit</button>
                           {u.role !== 'admin' && <button onClick={() => promptDeleteUser(u)} className="text-red-600 hover:text-red-900 text-sm">Delete</button>}
                         </td>
@@ -363,30 +341,23 @@ const AdminDashboard = () => {
           </div>
         )}
 
+        {/* --- TEAMS TAB --- */}
         {activeTab === 'teams' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="bg-white p-6 rounded-lg shadow h-fit">
               <h3 className="text-lg font-bold mb-4">Create Team</h3>
               <form onSubmit={handleCreateTeam} className="space-y-4">
                 <div><label className="block text-sm font-medium text-gray-700">Team Name</label><input type="text" required className="mt-1 w-full border border-gray-300 rounded p-2" value={newTeam.name} onChange={e => setNewTeam({...newTeam, name: e.target.value})} /></div>
                 <div><label className="block text-sm font-medium text-gray-700">Assign Lead</label><select className="mt-1 w-full border border-gray-300 rounded p-2" value={newTeam.leadId} onChange={e => setNewTeam({...newTeam, leadId: e.target.value})}><option value="">Select a User</option>{unassignedUsers.map(u => <option key={u._id} value={u._id}>{u.displayName}</option>)}</select></div>
-                
-                {/* --- MEMBER ASSIGNMENT WITH SEARCH --- */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Assign Members</label>
-                  <input 
-                    type="text" 
-                    placeholder="Search users..." 
-                    className="w-full border border-gray-300 rounded px-2 py-1 mb-2 text-sm"
-                    onChange={(e) => setMemberSearchTerm(e.target.value)}
-                  />
+                  <input type="text" placeholder="Search users..." className="w-full border border-gray-300 rounded px-2 py-1 mb-2 text-sm" onChange={(e) => setMemberSearchTerm(e.target.value)} />
                   <div className="h-40 overflow-y-auto border border-gray-300 rounded p-2 space-y-2">
                     {filterBySearch(unassignedUsers.filter(u => u._id !== newTeam.leadId)).length > 0 ? (
                       filterBySearch(unassignedUsers.filter(u => u._id !== newTeam.leadId)).map(u => (
                         <div key={u._id} className="flex items-center p-1 hover:bg-gray-50 rounded">
                           <input type="checkbox" id={`new-${u._id}`} checked={newTeam.memberIds.includes(u._id)} onChange={() => toggleNewTeamMember(u._id)} className="mr-3 h-4 w-4" />
                           <label htmlFor={`new-${u._id}`} className="cursor-pointer">
-                            {/* Larger Font for Name */}
                             <div className="text-base font-semibold text-gray-800">{u.displayName}</div>
                             <div className="text-xs text-gray-500">{u.email}</div>
                           </label>
@@ -399,25 +370,23 @@ const AdminDashboard = () => {
               </form>
             </div>
 
-            <div className="md:col-span-2 bg-white p-6 rounded-lg shadow">
-              {/* --- IMPROVED TITLE DESIGN --- */}
+            <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow overflow-hidden">
               <div className="flex items-center justify-between mb-6 pb-2 border-b border-gray-200">
                 <h3 className="text-xl font-bold text-gray-800">Active Teams</h3>
                 <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded-full">{teams.length} Teams</span>
               </div>
-
               <div className="grid gap-4">
                 {teams.map(team => (
                   <div key={team._id} className="border p-4 rounded bg-gray-50 flex flex-col md:flex-row justify-between items-start hover:shadow-sm transition-shadow">
                     <div className="flex-1 w-full">
                       <div className="flex justify-between items-center mb-2">
-                        <h4 className="font-bold text-lg text-gray-900">{team.name}</h4>
-                        <div className="space-x-2">
+                        <h4 className="font-bold text-lg text-gray-900 truncate mr-2">{team.name}</h4>
+                        <div className="flex space-x-2 shrink-0">
                           <button onClick={() => { setEditTeam(team); setMemberSearchTerm(''); }} className="text-blue-600 text-xs font-medium hover:underline bg-blue-50 px-2 py-1 rounded border border-blue-100">Edit</button>
                           <button onClick={() => promptDeleteTeam(team)} className="text-red-600 text-xs font-medium hover:underline bg-red-50 px-2 py-1 rounded border border-red-100">Delete</button>
                         </div>
                       </div>
-                      <div className="text-sm text-gray-600 mb-3 bg-white p-2 rounded border border-gray-100 inline-block">
+                      <div className="text-sm text-gray-600 mb-3 bg-white p-2 rounded border border-gray-100 inline-block max-w-full truncate">
                         <span className="font-semibold text-gray-700">Lead:</span> {team.lead?.displayName || <span className="italic text-gray-400">Unassigned</span>}
                       </div>
                       <div className="text-sm text-gray-600">
@@ -425,9 +394,9 @@ const AdminDashboard = () => {
                         {team.members && team.members.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
                             {team.members.map(m => (
-                              <span key={m._id} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white border border-gray-200 text-gray-700 shadow-sm">
-                                {m.displayName}
-                                <button onClick={() => promptRemoveMember(team, m)} className="ml-2 text-gray-400 hover:text-red-500 text-lg leading-none" title="Remove">×</button>
+                              <span key={m._id} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white border border-gray-200 text-gray-700 shadow-sm max-w-full">
+                                <span className="truncate max-w-[150px]">{m.displayName}</span>
+                                <button onClick={() => promptRemoveMember(team, m)} className="ml-2 text-gray-400 hover:text-red-500 text-lg leading-none shrink-0" title="Remove">×</button>
                               </span>
                             ))}
                           </div>
@@ -443,40 +412,79 @@ const AdminDashboard = () => {
 
         {/* --- REPORTS TAB --- */}
         {activeTab === 'reports' && (
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="flex flex-col md:flex-row justify-between items-end mb-6 gap-4">
-              <div className="flex flex-wrap gap-4">
-                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Month</label><input type="month" value={reportMonth} onChange={e => setReportMonth(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm" /></div>
-                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Search</label><input type="text" placeholder="Name" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm" /></div>
-                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Company</label><select value={filterCompany} onChange={e => setFilterCompany(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm min-w-[150px]"><option value="">All Companies</option>{uniqueCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Team</label><select value={filterTeam} onChange={e => setFilterTeam(e.target.value)} className="border border-gray-300 rounded px-3 py-2 text-sm min-w-[150px]"><option value="">All Teams</option>{uniqueTeams.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+          <div className="bg-white p-6 rounded-lg shadow overflow-hidden">
+            <div className="flex flex-col gap-4 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="w-full">
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Month</label>
+                  <input type="month" value={reportMonth} onChange={e => setReportMonth(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                </div>
+                <div className="w-full">
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Search</label>
+                  <input type="text" placeholder="Name" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                </div>
+                <div className="w-full">
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Company</label>
+                  <select value={filterCompany} onChange={e => setFilterCompany(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+                    <option value="">All Companies</option>
+                    {uniqueCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="w-full">
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Team</label>
+                  <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+                    <option value="">All Teams</option>
+                    {uniqueTeams.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
+
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Hours</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Details</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">User</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden sm:table-cell">Company</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap hidden md:table-cell">Team</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Total Hours</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Details</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {getFilteredStats().map((stat) => (
                     <React.Fragment key={stat._id}>
                       <tr className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{stat.displayName}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stat.company}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stat.teamName}</td>
+                        <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                          {stat.displayName}
+                          {/* Mobile-only sub-info */}
+                          <div className="text-xs text-gray-500 sm:hidden">
+                            {stat.company} • {stat.teamName}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden sm:table-cell">{stat.company}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden md:table-cell">{stat.teamName}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-bold">{stat.totalHours}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button onClick={() => setExpandedUser(expandedUser === stat._id ? null : stat._id)} className="text-blue-600 hover:text-blue-900">{expandedUser === stat._id ? 'Hide' : 'View Days'}</button>
+                          <button onClick={() => setExpandedUser(expandedUser === stat._id ? null : stat._id)} className="text-blue-600 hover:text-blue-900">
+                            {expandedUser === stat._id ? 'Hide' : 'View Days'}
+                          </button>
                         </td>
                       </tr>
                       {expandedUser === stat._id && (
-                        <tr><td colSpan="5" className="bg-gray-50 px-6 py-4"><div className="grid grid-cols-7 gap-2">{stat.entries.map((entry, idx) => (<div key={idx} className="bg-white p-2 rounded border border-gray-200 text-center"><div className="text-xs text-gray-500">{entry.date.slice(8, 10)}</div><div className="text-sm font-bold text-blue-600">{entry.hours}</div></div>))}{stat.entries.length === 0 && <span className="text-gray-500 italic text-sm">No data recorded.</span>}</div></td></tr>
+                        <tr>
+                          <td colSpan="5" className="bg-gray-50 px-6 py-4">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                              {stat.entries.map((entry, idx) => (
+                                <div key={idx} className="bg-white p-2 rounded border border-gray-200 text-center">
+                                  <div className="text-xs text-gray-500">{entry.date.slice(8, 10)}</div>
+                                  <div className="text-sm font-bold text-blue-600">{entry.hours}</div>
+                                </div>
+                              ))}
+                              {stat.entries.length === 0 && <span className="text-gray-500 italic text-sm">No data recorded.</span>}
+                            </div>
+                          </td>
+                        </tr>
                       )}
                     </React.Fragment>
                   ))}
@@ -486,6 +494,7 @@ const AdminDashboard = () => {
           </div>
         )}
 
+        {/* --- EDIT USER MODAL --- */}
         {editUser && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40">
             <div className="bg-white p-6 rounded shadow-lg w-full max-w-md">
@@ -499,6 +508,7 @@ const AdminDashboard = () => {
           </div>
         )}
 
+        {/* --- EDIT TEAM MODAL --- */}
         {editTeam && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40">
             <div className="bg-white p-6 rounded shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -506,8 +516,6 @@ const AdminDashboard = () => {
               <form onSubmit={handleUpdateTeam} className="space-y-4 pt-2">
                 <div><label className="block text-sm font-medium text-gray-700">Team Name</label><input type="text" className="w-full border p-2 rounded" value={editTeam.name} onChange={e => setEditTeam({...editTeam, name: e.target.value})} /></div>
                 <div><label className="block text-sm font-medium text-gray-700">Lead</label><select className="w-full border p-2 rounded" value={editTeam.lead?._id || editTeam.lead || ''} onChange={e => setEditTeam({...editTeam, lead: e.target.value})}><option value="">No Lead</option>{availableLeadsForEdit(editTeam.lead?._id || editTeam.lead).map(u => <option key={u._id} value={u._id}>{u.displayName}</option>)}</select></div>
-                
-                {/* --- EDIT MEMBER ASSIGNMENT WITH SEARCH --- */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Team Members</label>
                   <input type="text" placeholder="Search members..." className="w-full border border-gray-300 rounded px-2 py-1 mb-2 text-sm" onChange={(e) => setMemberSearchTerm(e.target.value)} />
