@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const AllowedEmail = require('../models/AllowedEmail');
 const Team = require('../models/Team');
+const Timesheet = require('../models/Timesheet'); // Import Timesheet Model
 
 // Get All Users
 const getAllUsers = async (req, res) => {
@@ -12,7 +13,7 @@ const getAllUsers = async (req, res) => {
   }
 };
 
-// Add New User (With Rollback)
+// Add New User
 const createUser = async (req, res) => {
   const { email, name, role, company } = req.body;
   const lowerEmail = email.toLowerCase();
@@ -61,19 +62,27 @@ const updateUser = async (req, res) => {
   }
 };
 
-// Delete User
+// Delete User (FIXED: Deletes Timesheets)
 const deleteUser = async (req, res) => {
   try {
     const userId = req.params.id;
     const user = await User.findById(userId);
     if (!user) return res.json({ message: 'User already deleted' });
 
+    // 1. Remove from Whitelist
     await AllowedEmail.findOneAndDelete({ email: user.email });
+
+    // 2. Remove from Teams
     await Team.updateMany({ lead: userId }, { lead: null });
     await Team.updateMany({ members: userId }, { $pull: { members: userId } });
+    
+    // 3. Remove User's Timesheets (NEW ADDITION)
+    await Timesheet.deleteMany({ user: userId });
+
+    // 4. Delete User
     await User.findByIdAndDelete(userId);
     
-    res.json({ message: 'User deleted' });
+    res.json({ message: 'User and associated data deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
