@@ -81,7 +81,7 @@ exports.getTeamMembers = async (req, res) => {
   }
 };
 
-// NEW: GET All User Stats (Admin Only)
+// NEW: GET All User Stats (Admin Only) - EXCLUDES ADMINS FROM REPORT
 exports.getAllUserStats = async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
@@ -90,8 +90,8 @@ exports.getAllUserStats = async (req, res) => {
 
     const { month } = req.query;
 
-    // 1. Get all users with their team info
-    const users = await User.find().populate('team', 'name');
+    // 1. Get all users EXCLUDING admins
+    const users = await User.find({ role: { $ne: 'admin' } }).populate('team', 'name');
 
     // 2. Get timesheets for the selected month
     const timesheets = await Timesheet.find({ month });
@@ -106,7 +106,7 @@ exports.getAllUserStats = async (req, res) => {
         company: user.company || 'N/A',
         teamName: user.team?.name || 'Unassigned',
         totalHours: sheet ? sheet.totalHours : 0,
-        entries: sheet ? sheet.entries : [] // For detailed view
+        entries: sheet ? sheet.entries : []
       };
     });
 

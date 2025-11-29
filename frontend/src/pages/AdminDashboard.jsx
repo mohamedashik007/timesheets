@@ -5,29 +5,24 @@ const AdminDashboard = () => {
   const [currentUser, setCurrentUser] = useState(null);
   const [users, setUsers] = useState([]);
   const [teams, setTeams] = useState([]);
-  const [stats, setStats] = useState([]); // Stores the merged report data
+  const [stats, setStats] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // Notification State
   const [notification, setNotification] = useState(null);
-
-  // Form States
   const [newUser, setNewUser] = useState({ email: '', name: '', role: 'user', company: '' });
   const [newTeam, setNewTeam] = useState({ name: '', leadId: '', memberIds: [] });
   
-  // UI States
   const [activeTab, setActiveTab] = useState('users');
   const [editUser, setEditUser] = useState(null);
   const [editTeam, setEditTeam] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   
-  // Report Filters
   const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCompany, setFilterCompany] = useState('');
   const [filterTeam, setFilterTeam] = useState('');
-  const [expandedUser, setExpandedUser] = useState(null); // ID of user to show detailed stats for
+  const [expandedUser, setExpandedUser] = useState(null);
 
   const showNotify = (message, type = 'success') => {
     setNotification({ message, type });
@@ -38,7 +33,6 @@ const AdminDashboard = () => {
     fetchInitialData();
   }, [navigate]);
 
-  // Fetch Report Data when month changes (Only if on Reports tab)
   useEffect(() => {
     if (activeTab === 'reports' && currentUser) {
       fetchReportData();
@@ -81,7 +75,6 @@ const AdminDashboard = () => {
     }
   };
 
-  // --- FILTER LOGIC ---
   const getFilteredStats = () => {
     return stats.filter(stat => {
       const matchesName = stat.displayName.toLowerCase().includes(searchTerm.toLowerCase());
@@ -94,7 +87,6 @@ const AdminDashboard = () => {
   const uniqueCompanies = [...new Set(stats.map(s => s.company).filter(c => c !== 'N/A'))];
   const uniqueTeams = [...new Set(stats.map(s => s.teamName).filter(t => t !== 'Unassigned'))];
 
-  // --- EXISTING HANDLERS (Add, Edit, Delete) ---
   const handleAddUser = async (e) => {
     e.preventDefault();
     const payload = { ...newUser, role: 'user' };
@@ -228,10 +220,21 @@ const AdminDashboard = () => {
     });
   };
 
-  // --- FILTER HELPERS ---
-  const unassignedUsers = users.filter(u => (u.role === 'user' || u.role === 'team_lead') && !u.team);
-  const availableUsersForEditTeam = (teamId) => users.filter(u => (u.role === 'user' || u.role === 'team_lead') && (!u.team || u.team._id === teamId));
-  const availableLeadsForEdit = (currentLeadId) => users.filter(u => u.role !== 'admin' && (!u.team || u._id === currentLeadId));
+  // --- FILTER HELPERS (Updated to exclude admins) ---
+  const unassignedUsers = users.filter(u => 
+    u.role !== 'admin' && (u.role === 'user' || u.role === 'team_lead') && !u.team
+  );
+
+  const availableUsersForEditTeam = (teamId) => users.filter(u => 
+    u.role !== 'admin' && // CRITICAL FIX: Explicitly exclude admins
+    (u.role === 'user' || u.role === 'team_lead') && 
+    (!u.team || u.team._id === teamId)
+  );
+
+  const availableLeadsForEdit = (currentLeadId) => users.filter(u => 
+    u.role !== 'admin' && // CRITICAL FIX: Explicitly exclude admins
+    (!u.team || u._id === currentLeadId)
+  );
 
   if (loading) return <div className="p-10 text-center">Loading...</div>;
 
@@ -245,7 +248,6 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* --- CONFIRM DELETE MODAL --- */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-6 rounded shadow-lg w-full max-w-sm">
@@ -276,7 +278,6 @@ const AdminDashboard = () => {
           <button onClick={() => setActiveTab('reports')} className={`pb-2 px-4 ${activeTab === 'reports' ? 'border-b-2 border-blue-500 text-blue-600 font-bold' : 'text-gray-500'}`}>Reports</button>
         </div>
 
-        {/* --- USERS TAB --- */}
         {activeTab === 'users' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="bg-white p-6 rounded-lg shadow h-fit">
@@ -336,7 +337,6 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* --- TEAMS TAB --- */}
         {activeTab === 'teams' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="bg-white p-6 rounded-lg shadow h-fit">
@@ -409,7 +409,6 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* --- REPORTS TAB (NEW) --- */}
         {activeTab === 'reports' && (
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex flex-col md:flex-row justify-between items-end mb-6 gap-4">
@@ -490,7 +489,6 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* --- EDIT MODALS (User & Team) --- */}
         {editUser && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40">
             <div className="bg-white p-6 rounded shadow-lg w-full max-w-md">
